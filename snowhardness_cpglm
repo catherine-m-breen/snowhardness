@@ -1,0 +1,669 @@
+
+
+# Catherine Brene
+# Sunday July 21, 2024
+#
+# # additional scripts:
+# snowhardness_glmm_mar11.R
+# snowhardness_glmm_mar11_v2.R
+# snowhardness_glmm_v3
+
+
+library(glmmTMB)
+library(dplyr)
+library(lme4)
+library(MuMIn)
+library(ggplot2)
+library(corrplot)
+library(lubridate)
+library(gridExtra)
+#install.packages('purrr')
+library(purrr)
+library(mgcv)
+library(Metrics)
+library(overlap)
+library(stringr)
+library(sf)
+library(sf)
+library(sp)
+
+
+fdata <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/fdata_tdata_snowDensity_fromR.csv')
+fdata$Date <- as.character(as.Date(fdata$Date, format = "%m/%d/%y"))
+fdata$Hour <- as.character(fdata$Hour)
+#remove(fdata_tdataN)
+
+##
+weather_station_temp <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/fieldwork/temperatureData/weatherstation_temperature.csv')
+weather_station_temp$Date <- as.character(as.Date(weather_station_temp$Date, format = "%d.%m.%Y"))
+weather_station_temp$Hour <- str_extract(weather_station_temp$Hour, "\\d+")
+head(weather_station_temp)
+#senorge outputs
+# We pulled this from Neri's R code:
+senorge <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/senorge_outputs_Jan1_May17-23.csv')
+colnames(senorge)[2] <- 'Latitude'
+colnames(senorge)[4] <- 'Date'
+senorge <- senorge[,c('Latitude','snowdepth.mm', 'Date', 'freshsnow_waterEqui.mm','freshsnowdepth.mm','dsls', 'precipitation.mm', 'SWE.mm', 'snowmelt.mm','liqwatercontent')]
+senorge['snowDensity.senorge'] <- senorge$SWE.mm / senorge$snowdepth.mm * 100
+head(senorge)
+
+
+## senorge temperature outputs
+senorge_temp <- read.csv('/Users/catherinebreen/Documents/Chapter3/minmaxavg_temp_senorge.csv')
+colnames(senorge_temp)[2] <- 'Latitude'
+colnames(senorge_temp)[5] <- 'Date'
+senorge_temp <- senorge_temp[,c('Latitude','Date', 'max.temp.c','min.temp.c','avg.temp.c','cross_0')]
+head(senorge_temp)
+
+data <- dplyr::left_join(fdata, senorge, by = c('Latitude','Date'), relationship="many-to-many")
+data <-dplyr::left_join(data, senorge_temp, by = c('Latitude','Date'), relationship="many-to-many")
+data1 <-dplyr::left_join(data, weather_station_temp, by = c('county','Date', 'Hour'), relationship="many-to-many")
+
+data <- data1
+head(data)
+head(data1)
+data$avgsinkDp <- as.numeric(data$avgsinkDp)
+data <- data[complete.cases(data$avgsinkDp),]
+
+
+data['temp_swing'] <- 0
+
+## cross 0?
+for (i in seq(1: nrow(data))) {
+  diff <- data$max.temp.c - data$min.temp.c
+  print(diff)
+  data$temp_swing <- diff
+}
+
+head(diff)
+
+data$cnpyClass <- 0
+
+## cross 0?
+for (i in seq(1: nrow(data))) {
+  if (data$CnpyCvr[i] < 50){
+    data$cnpyClass[i] <- 0
+  }
+  else{data$cnpyClass[i] <- 1}
+}
+
+head(diff)
+
+data$season <- 0
+
+## cross 0?
+for (i in seq(1: nrow(data))) {
+  if (data$Month[i] <= 3){
+    data$season[i] <- 0
+  }
+  else{data$season[i] <- 1}
+}
+
+data$warm <- 0
+
+## cross 0?
+for (i in seq(1: nrow(data))) {
+  if (data$avg.temp.c[i] > 0){
+    data$warm[i] <- 1
+  }
+  else{data$warm[i] <- 0}
+}
+
+head(diff)
+
+
+## some group variables
+
+## group by visit because we want peak and trough
+result <- data %>%
+  group_by(Date) %>%
+  summarize(max_hard = max(avgsinkDp),
+            min_hard = min(avgsinkDp),
+            mean_hard = mean(avgsinkDp))
+
+# View the result
+print(result)
+
+data <- left_join(data, result)
+
+
+head(data)
+
+
+#write.csv(data,'fdata_wsenorge_andtemp.csv')
+
+#wind <- read.csv('/Users/catherinebreen/Documents/Chapter3/data/seklima_wind.csv') ## less ideal because will be hard to get for all cameras because I got this for weather stations
+
+#clear sky radiation
+# csr <- read.csv('/Users/catherinebreen/Documents/Chapter3/data/clear_sky_radiation_at_sites.csv')
+# csr <- csr[,c('Latitude', 'Longitude','Date', 'Hour', 'csr')]
+#
+# data <- dplyr::left_join(data, csr, by = c('Date','Hour','Latitude', 'Longitude'))
+# head(data)
+#write.csv(data1, "fielddata_wCamTemp.csv")
+
+#data <- read.csv('/Users/catherinebreen/Documents/Chapter3/fielddata_wCamTemp.csv')
+# OR
+#data <- data2
+
+### suntime
+data$rads <- astroFns::hms2rad(data$Hour)
+
+coords <- data[,c("Longitude", "Latitude")]
+Coords_SPDF <- sp::SpatialPointsDataFrame(coords, proj4string = CRS("+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0"), data = data) #CRS("+init=epsg:4269 +proj=longlat +datum=NAD83"), data = data)
+
+data$timeZone <- lutz::tz_lookup_coords(lat=data$Latitude, lon = data$Longitude, warn = FALSE, method = "accurate")
+# Function to concatenate two strings
+concatenate_strings <- function(date, time) {
+  return(paste(date, time))
+}
+
+# Using mapply to apply the function to each corresponding pair of elements
+data$datetime <- mapply(concatenate_strings, data$Date, data$Time)
+
+Dates<- as.POSIXct(data$datetime, tz = "Europe/Oslo")
+
+
+data$sun.time <- sunTime(data$rads, Dates, Coords_SPDF)
+
+data$contTime <- as.numeric(difftime(data$datetime, '2023-01-01', units = "hours"))
+
+
+
+
+head(data)
+nrow(data)
+
+data$visit <- as.factor(data$visit)
+data$Month <- as.integer(data$Month)
+data$Latitude <- as.numeric(data$Latitude)
+data$Longitude <- as.numeric(data$Longitude)
+data$Elevation..m. <- as.numeric(data$Elevation..m.)
+data$Aspect..d. <- as.numeric(data$Aspect..d.)
+data$CnpyCvr <- as.numeric(data$CnpyCvr)
+data$Hour <- as.numeric(data$Hour)
+data$cam_tempN <- as.numeric(data$cam_tempN)
+data$cam_tempS <- as.numeric(data$cam_tempS)
+data$doy <- as.numeric(as.character(yday(data$Date)))
+data$dsls <- as.numeric(data$dsls)
+
+data$AirTemp <- as.numeric(data$AirTemp)
+data$SnwDpth <- as.numeric(data$SnwDpth)
+data$CldCvr <- as.numeric(data$CldCvr)
+data$precipitation.mm <- as.numeric(data$precipitation.mm)
+data$SWE.mm <- as.numeric(data$SWE.mm)
+data$snowmelt.mm <- as.numeric(data$snowmelt.mm)
+data$liqwatercontent <- as.numeric(data$liqwatercontent)
+
+
+### it's correlated
+
+cor.test(data$AirTemp, data$avg.temp.c)
+cor.test(data$AirTemp, data$avg.temp.c)
+cor.test(data$snowDensity.senorge, data$snwDnsty10cm)
+
+#data$FreezeThaw <- factor(data$FreezeThaw)
+
+#data$Slope <- as.integer(data$Slope)
+#data$Weather <- as.factor(data$Weather)
+
+#data$Relative.Humidity <- as.integer(data$Relative.Humidity)
+#data$sinkDp1 <- as.integer(data$sinkDp1)
+#data$sinkDp2 <- as.integer(data$sinkDp2)
+#data$snwDnsty10cm <- as.integer(data$snwDnsty10cm)
+
+##### visualize ######
+data <- data[data$Weather == 'None',]
+## get out outliers
+data <- data[data$avgsinkDp < 10,]
+saveRDS(data, file = "snow_hardness_covariates_df.rds")
+#data1 <- data[data$cross_0 == 1,]
+data2 <- data[data$cross_freezing == 'Y',]
+
+## for simple visualization, we will use a GAM
+## https://ggplot2.tidyverse.org/reference/geom_smooth.html#:~:text=Controls%20the%20amount%20of%20smoothing,are%20fewer%20than%201%2C000%20observations.
+
+data2 <- data2 %>%
+  filter(!(visit == 7 & cnpyClass == 1 & avgsinkDp > 7))
+
+## exploratory plots ##
+## supp fig 2
+plot2g <-  ggplot(data2, aes(x = sun.time, y = avgsinkDp)) +
+  geom_point(position = position_jitter(width = 0.2, height = 0.2), alpha = 0.5) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cc"), color = 'red', aes(linetype = "GAM")) + #method = "lm", formula = y ~ sin(2 * pi * x/24), se = TRUE, color = "blue") +
+  geom_smooth(method = "lm", formula = y ~ sin(x) + cos(x), color = 'blue', aes(linetype = "LM")) +
+  scale_x_continuous(breaks = c(0, pi/2, pi, 3*pi/2, 2*pi), labels = c("midnight", "sunrise", "noon", "sunset", "midnight")) +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  labs(
+       x = "Time", #sun time
+       y = "Average Sink Depth (cm) ") + theme_bw()
+plot2g
+
+
+plot2a <- ggplot(data, aes(x = sun.time, y = avgsinkDp, group=cnpyClass, color =cnpyClass)) +
+  geom_point(position = position_jitter(width = 0.2, height = 0.2), alpha = 0.5) +
+  geom_smooth(method = "lm", formula = y ~ sin(x) + cos(x)) + #method = "lm", formula = y ~ sin(2 * pi * x/24), se = TRUE, color = "blue") +
+  scale_x_continuous(breaks = c(0, pi/2, pi, 3*pi/2, 2*pi), labels = c("midnight", "sunrise", "noon", "sunset", "midnight")) +
+  labs(title = 'all data sun time with lm',
+       x = "Time", #sun time
+       y = "Average Sink Depth (cm) ") + theme_bw()
+plot2a
+plot2a + facet_wrap(~season)
+
+### Figure 2
+plot_alldata <- ggplot(data2, aes(x = sun.time, y = avgsinkDp, color=factor(cnpyClass), group = factor(cnpyClass))) +
+  geom_line() +
+  scale_x_continuous(breaks = c(0, pi/2, pi, 3*pi/2, 2*pi), labels = c("midnight", "sunrise", "noon", "sunset", "midnight")) +
+  labs(x = "Time", #sun time
+       y = "Average Sink Depth (cm) ") + theme_bw() +
+  scale_color_manual(values = c("0" = "blue", "1" = "darkgreen"), # Adjust colors as needed
+                     labels = c("0" = "Open", "1" = "Closed")) + # Set custom labels
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1), # Rotate x-axis labels
+    legend.title = element_blank(), # Remove legend title
+    legend.position = c(0.9, 0.9) # Move legend to top right corner
+  )
+plot_alldata
+plot_alldata + facet_wrap(~visit)
+
+### some meta statistics
+open_avg <- mean(data2[data2$cnpyClass==0,]$avgsinkDp)
+open_std <- sd(data2[data2$cnpyClass==0,]$avgsinkDp)
+closed_avg <- mean(data2[data2$cnpyClass==1,]$avgsinkDp)
+closed_std <- sd(data2[data2$cnpyClass==1,]$avgsinkDp)
+
+
+
+#### leading model
+data_var_only <- na.omit(data2[c('sun.time','CldCvr','CnpyCvr','snwDnsty10cm','AirTemp', 'snowDensity.senorge', 'avg.temp.c','max.temp.c','min.temp.c',
+                                'cam_tempN', 'cam_tempS')])
+colnames(data_var_only) <- c('sun time', 'cloud cover','canopy cover','10-cm density', 'hourly air temp',
+                             'modeled density','avg. daily temp','max daily temp','min daily temp', 'north-facing cam temp','south-facing cam temp')
+#
+
+library(corrplot)
+dev.new(width = 12, height = 8)
+corrplot(cor(data_var_only), tl.col = "black", method = "color",
+         outline = T,
+         addCoef.col = "black", number.digits = 1, type = 'lower', tl.srt = 45,  # Rotate the labels by 45 degrees
+         cl.pos = 'b',
+         col = colorRampPalette(c("darkred", "white","midnightblue"))(100))
+
+corr <- cor(data_var_only)
+corr_filtered <- corr
+corr_filtered[abs(corr) <= 0.4] <- 0  # Set correlations below 0.4 to NA
+
+# Plot the filtered correlation matrix
+corrplot(corr_filtered, tl.col = "black", method = "color", outline = TRUE,
+         order = "hclust", addCoef.col = "black", number.digits = 1,
+         cl.pos = 'b', col = colorRampPalette(c("darkred", "white","midnightblue"))(100),
+         type = "lower",
+         tl.srt = 45)  # Rotate the labels by 45 degrees
+
+# corrplot(cor(data_var_only$`sun time`, data_var_only$`canopy cover`), tl.col = "black", method = "color",
+#          outline = T,  order="hclust",
+#          addCoef.col = "black", number.digits = 1, type = 'lower', tl.srt = 45,  # Rotate the labels by 45 degrees
+#          cl.pos = 'b',
+#          col = colorRampPalette(c("darkred", "white","midnightblue"))(100))
+
+
+
+### check distribution
+ggplot(data2, aes(x = avgsinkDp)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "white", alpha = 0.7) +
+  labs(
+    x = "Average Sink Depth (cm)",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  geom_vline(aes(xintercept = mean(avgsinkDp, na.rm = TRUE)),
+             color = "red", linetype = "dashed", size = 1) +
+  geom_density(aes(y = ..count.. * 0.5), color = "blue", linetype = "dotted", size = 1)
+
+library(statmod)
+library(tweedie)
+library(cplm)
+# model2_tweedie <- cpglm((avgsinkDp+0.1) ~ scale(sin(sun.time)) * scale(season) * scale(cnpyClass) + scale(cos(sun.time)) * scale(season) * scale(cnpyClass),
+#                         data = play,  na.action = na.omit, family=tweedie(var.power=1.1,link.power=0))
+
+
+calculate_deviance_explained <- function(model) {
+  # Obtain the deviance of the given model
+  model_deviance <- deviance(model)
+  null_model <- update(model, . ~ 1)
+  null_deviance <- deviance(null_model)
+  deviance_explained <- 1 - (model_deviance / null_deviance)
+  # Print the R-squared value (deviance explained)
+  print(deviance_explained)
+  # Return the deviance explained
+  return(deviance_explained)
+}
+
+model1<- glm((avgsinkDp) ~ scale(sin(sun.time)) + scale(cos(sun.time)), data = data2,  na.action = na.omit, family =
+                            tweedie(var.power=1.1,
+                                    link.power=0))
+
+model1b <- cpglm((avgsinkDp) ~ scale(sin(sun.time)) + scale(cos(sun.time)), data = data2,  na.action = na.omit, family =
+                        tweedie(var.power=1.1,
+                                link.power=0))
+
+summary(model1)
+plot(fitted(model1), residuals(model1))
+bptest(model1)
+bp_model <- lm(residuals(model1)^2 ~ fitted(model1))
+bptest(bp_model)
+# MuMIn::r.squaredGLMM(model1)
+AIC(model1) ##
+calculate_deviance_explained(model1)
+
+summary(model1b)
+plot(residuals(model1b))
+plot(fitted(model1b), residuals(model1b))
+bp_model <- lm(residuals(model1b)^2 ~ fitted(model1b))
+bptest(bp_model)
+bptest(model1b)
+AIC(model1b)
+calculate_deviance_explained(model1b)
+
+qqnorm(resid(model1))
+qqnorm(resid(model1b))
+
+
+model2 <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) +
+                  scale(cos(sun.time))* scale(cnpyClass) , data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+
+summary(model2)
+plot(residuals(model2))
+plot(fitted(model1b), residuals(model2))
+bp_model <- lm(residuals(model2)^2 ~ fitted(model2))
+bptest(bp_model)
+bptest(model2)
+AIC(model2)
+calculate_deviance_explained(model2)
+qqnorm(resid(model2))
+
+model3 <- glm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                 scale(cos(sun.time))* scale(cnpyClass) * scale(season), data = data2,  na.action = na.omit, family =
+                 tweedie(var.power=1.1,
+                         link.power=0))
+
+model3 <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                  scale(cos(sun.time))* scale(cnpyClass) * scale(season), data = data2,  na.action = na.omit, family =
+                  tweedie(var.power=1.1,
+                          link.power=0))
+
+summary(model3)
+plot(residuals(model3))
+plot(fitted(model3), residuals(model3))
+bp_model <- lm(residuals(model3)^2 ~ fitted(model3))
+bptest(bp_model)
+bptest(model3)
+AIC(model3)
+calculate_deviance_explained(model3)
+qqnorm(resid(model3))
+
+## don't make factor because
+# data2$cnpyClassF <- as.factor(data2$cnpyClass)
+# model3a <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClassF) *scale(season) +
+#                   scale(cos(sun.time))* scale(cnpyClassF) * scale(season), data = data2,  na.action = na.omit, family =
+#                   tweedie(var.power=1.1,
+#                           link.power=0))
+
+model4 <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                  scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(snwDnsty10cm), data = data2,  na.action = na.omit, family =
+                  tweedie(var.power=1.1,
+                          link.power=0))
+summary(model4)
+plot(residuals(model4))
+plot(fitted(model4), residuals(model4))
+bp_model <- lm(residuals(model4)^2 ~ fitted(model4))
+bptest(bp_model)
+bptest(model4)
+AIC(model4)
+calculate_deviance_explained(model4)
+qqnorm(resid(model4))
+
+
+model4b <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                  scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(snowDensity.senorge), data = data2,  na.action = na.omit, family =
+                  tweedie(var.power=1.1,
+                          link.power=0))
+summary(model4b)
+plot(residuals(model4b))
+plot(fitted(model4b), residuals(model4b))
+bp_model <- lm(residuals(model4b)^2 ~ fitted(model4b))
+bptest(bp_model)
+AIC(model4b)
+calculate_deviance_explained(model4b)
+qqnorm(resid(model4b))
+
+
+cor(data2[c('sun.time','AirTemp')])
+
+model5 <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(AirTemp), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model5)
+plot(residuals(model5))
+plot(fitted(model5), residuals(model5))
+bp_model <- lm(residuals(model5)^2 ~ fitted(model5))
+bptest(bp_model)
+AIC(model5)
+calculate_deviance_explained(model5)
+qqnorm(resid(model5))
+
+model5b <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                  scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(cam_tempS), data = data2,  na.action = na.omit, family =
+                  tweedie(var.power=1.1,
+                          link.power=0))
+summary(model5b)
+plot(residuals(model5b))
+plot(fitted(model5b), residuals(model5b))
+bp_model <- lm(residuals(model5b)^2 ~ fitted(model5b))
+bptest(bp_model)
+AIC(model5b)
+calculate_deviance_explained(model5b)
+qqnorm(resid(model5b))
+
+
+model5c <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(cam_tempN), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model5c)
+plot(residuals(model5c))
+plot(fitted(model5b), residuals(model5c))
+bp_model <- lm(residuals(model5c)^2 ~ fitted(model5c))
+bptest(bp_model)
+AIC(model5c)
+calculate_deviance_explained(model5c)
+qqnorm(resid(model5c))
+
+
+model5d <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(avg.temp.c), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model5d)
+plot(residuals(model5d))
+plot(fitted(model5b), residuals(model5d))
+bp_model <- lm(residuals(model5d)^2 ~ fitted(model5d))
+bptest(bp_model)
+AIC(model5d)
+calculate_deviance_explained(model5d)
+qqnorm(resid(model5d))
+
+
+model5e <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(max.temp.c), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model5e)
+plot(residuals(model5e))
+plot(fitted(model5e), residuals(model5e))
+bp_model <- lm(residuals(model5e)^2 ~ fitted(model5e))
+bptest(bp_model)
+AIC(model5e)
+calculate_deviance_explained(model5e)
+qqnorm(resid(model5e))
+
+model5f <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(min.temp.c), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model5f)
+plot(residuals(model5f))
+plot(fitted(model5f), residuals(model5f))
+bp_model <- lm(residuals(model5f)^2 ~ fitted(model5f))
+bptest(bp_model)
+AIC(model5f)
+calculate_deviance_explained(model5f)
+qqnorm(resid(model5f))
+
+
+cor(data2[c('sun.time','min.temp.c','snwDnsty10cm')])
+cor.test(data2$snwDnsty10cm,data2$min.temp.c) ##0.45
+cor.test(data2$snwDnsty10cm,data2$avg.temp.c) ##0.59
+cor.test(data2$snwDnsty10cm,data2$cam_tempS) ##0.23
+
+model6 <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                   scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(min.temp.c) + scale(snwDnsty10cm), data = data2,  na.action = na.omit, family =
+                   tweedie(var.power=1.1,
+                           link.power=0))
+summary(model6)
+plot(residuals(model6))
+plot(fitted(model6), residuals(model6))
+bp_model <- lm(residuals(model6)^2 ~ fitted(model6))
+bptest(bp_model)
+AIC(model6)
+calculate_deviance_explained(model6)
+qqnorm(resid(model6))
+
+model6a <- cpglm((avgsinkDp) ~ scale(sin(sun.time))*scale(cnpyClass) *scale(season) +
+                  scale(cos(sun.time))* scale(cnpyClass) * scale(season) + scale(cam_tempS) + scale(snwDnsty10cm), data = data2,  na.action = na.omit, family =
+                  tweedie(var.power=1.1,
+                          link.power=0))
+summary(model6a)
+plot(residuals(model6a))
+plot(fitted(model6), residuals(model6a))
+bp_model <- lm(residuals(model6a)^2 ~ fitted(model6a))
+bptest(bp_model)
+AIC(model6a)
+calculate_deviance_explained(model6a)
+qqnorm(resid(model6a))
+
+models <- c(model1b, model2, model3, model4, model4b, model5, model5b, model5c, model5d, model5e, model5f, model6, model6a)
+aic_values <- sapply(models, AIC)
+
+# Get the order of AIC values
+order_aic <- order(aic_values)
+sorted_models <- models[order_aic]
+sorted_aic_values <- aic_values[order_aic]
+print(sorted_aic_values)
+print(sorted_models[1])
+
+
+###########
+# Load necessary libraries
+# Assuming 'data' is your original data frame and 'model2' is already fitted as specified
+
+# Create a sequence of sun.time values for prediction
+sun_time_seq <- seq(0, 2*pi, length.out = 400)
+
+# Create a new data frame for predictions
+pred_data <- expand.grid(
+  sun.time = sun_time_seq,
+  season = c(0, 1),
+  cnpyClass = c(0, 1)
+)
+
+# Generate predicted values using the model for all combinations of season and cnpyClass
+pred_data$predicted_hardness <- predict(model3, newdata = pred_data, type = "response")
+pred_data$se <- predict(model2, newdata = pred_data[1,], type = "response", se.fit = TRUE) #$se.fit
+
+
+# Obtain the model matrix for the new data
+X_new <- model.matrix(~ scale(sin(sun.time)) * scale(cnpyClass) * scale(season) +
+                        scale(cos(sun.time)) * scale(cnpyClass) * scale(season),
+                      data = pred_data)
+
+V <- vcov(model3)
+var_fit <- rowSums((X_new %*% V) * X_new)
+print(dim(X_new))
+print(dim(V))
+se_fit <- sqrt(var_fit)
+pred_data$se <- se_fit
+print(pred_data)
+
+# scale(cnpyClass) + scale(season)
+
+# Define custom tick positions and labels
+tick_positions <- c(0, pi/2, pi, 3*pi/2, 2*pi)
+tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
+
+# Plot for Early Season (season == 0)
+early_season_plot <- ggplot(data = pred_data[pred_data$season == 0, ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  #geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line(size = 2) +
+  geom_point(data = data[data['season']==0,], aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass)), alpha = 0.5) +
+  labs(x = "Sun Time", y = "Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "grey") + # Add vertical
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 14, angle = 0), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =14),
+                          axis.title.y = element_text(size = 16),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+                          ) +
+  ylim(0,8)
+
+early_season_plot
+
+# Plot for Late Season (season == 1)
+late_season_plot <- ggplot(data = pred_data[pred_data$season == 1, ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass))) + # fill = 'grey') +   #aes(color = factor(cnpyClass))) +
+  geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se, fill = "band"), alpha = 0.5, fill='lightgrey', color = 'lightgrey') +
+  geom_point(data = data[data['season']==1,], aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass)), alpha = 0.5) +
+  labs(x  = "Sun Time", y = "Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "grey") + # Add vertical
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(
+    axis.text.x = element_text(size = 14, angle = 0), # Rotate x-axis labels
+    axis.text.y = element_blank(),
+    axis.title.x = element_text(size = 16),       # Increase x-axis title text size
+    axis.title.y = element_blank(),       # Increase y-axis title text size
+    #axis.text.y = element_text(size = 14),        # Increase y-axis text size
+    plot.title = element_text(size = 20),         # Increase plot title text size
+    legend.title = element_blank(), # Remove legend title
+    legend.position = c(0.6, 0.8), # Move legend to top right corner
+    legend.text = element_text(size = 14), # Make legend text bigger
+    plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) +
+  geom_line(size = 2) + ylim(0,8)
+
+# geom_errorbar()# Print the plots
+grid.arrange(early_season_plot, late_season_plot, ncol = 2)
+
+
+hist(pred_data$predicted_hardness)
+saveRDS(model3, 'model_cpglm_tweedie.rds')
+
+
+
+
