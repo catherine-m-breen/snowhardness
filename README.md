@@ -11,4 +11,5 @@ There are several coding scripts to support analysis
 - snowhardness_model.R: cleans field data and derives snow hardness linear model
 - scandcam_analysis.R: cleans data and makes snow hardness predictions from snow hardness model
 - overlapPlots.R: Identifies overlap depending on different snow hardness conditions
-- gam_model.R: Idenifies frequency depending on hourly snow hardness values 
+- gam_model.R: Idenifies frequency depending on hourly snow hardness values
+- treecanoycover.R: identifies tree canopy for each camera (covariates)
