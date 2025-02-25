@@ -1,8 +1,12 @@
 #* Catherine Breen
 #* for Oikos submission
 
+
+####### 0. LOAD PACKAGES ############ ##########
+
 ## data processing
 library(astroFns)
+library(overlap)
 library(sp)
 library(lutz)
 library(dplyr)
@@ -24,16 +28,15 @@ library(mgcv)
 ## viz packages
 library(corrplot)
 library(ggplot2)
-# library(gridExtra)
+library(gridExtra)
 # library(purrr)
 
-# library(mgcv)
 # library(Metrics)
-# library(overlap)
 # library(stringr)
 # library(sf)
 
-### data files ###
+############## 1. LOAD DATA AND FUNCTIONS #########
+
 ## field data, snow data, temperature data
 fdata <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/fdata_tdata_snowDensity_fromR2.csv')
 senorge <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/senorge_outputs_Jan1_May17-23.csv')
@@ -67,6 +70,7 @@ fdata <- fdata[fdata$cross_freezing == 'Y',]
 ## functions to use later ##
 ## this function backtracks the difference between two suntimes accounting for the change in day length
 ## i.e., 6 suntime and 8 suntime have more hours between them depending on early or late season
+
 spanFunc <- function(clockTime, Dates, Coords) {
   # Find sunset/sunrise times at location
   sr <- suntools::sunriset(Coords, Dates, direct="sunrise") * 2 * pi  # radians
@@ -141,7 +145,7 @@ data$datetime <- mapply(concatenate_strings, data$Date, data$Time)
 data <- data %>%
   mutate(datetime = as.POSIXct(paste(Date, Time), tz = "Europe/Oslo"),
          julian_day = yday(datetime),
-         sun.time = sunTime(rads, datetime, Coords_SPDF))
+         sun.time = overlap::sunTime(rads, datetime, Coords_SPDF))
 
 
 data <- data %>%
@@ -164,11 +168,12 @@ cor.test(data$avg.temp.c, data$avg.temp.c.prev3)
 cor.test(data$avg.temp.c, data$avg.temp.c.prev2)
 cor.test(data$avg.temp.c, data$temp.diff)
 cor.test(data$avg.temp.c, data$week)
+cor.test(data$AirTemp, data$avg.temp.c.prev)
 
-##### If need to save data ######
 #saveRDS(data, file = "snow_hardness_covariates_df.rds")
 
-## exploratory plots ##
+
+############## 2. exploratory plots ##############
 
 temp <- data[data$doy != 30,]
 
@@ -194,7 +199,8 @@ table(data$season)
 table(data$cloudy)
 table(data$week)
 
-####################### START HERE ######################
+
+############## 3. START HERE ######################
 #data <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/snow_hardness_covariates_df.rds')
 
 ### Supp figure 3
@@ -228,7 +234,8 @@ stats <- data %>%
     stdev = sd(avgsinkDp, na.rm = TRUE),
   )
 print(stats)
-###################
+
+############## 4. CORRELATION CHECK ############
 
 data_var_only <- na.omit(data[c('sun.time','CnpyCvr','snowDensity.senorge','Latitude', 'season', 'avg.temp.c.prev',
                                 'avg.temp.c.prev3','avg.temp.c.prev2','avg.temp.c','temp.diff', 'doy','week', 'CldCvr')])
@@ -283,7 +290,8 @@ ggplot(truncated_dat, aes(x = avgsinkDp)) +
     axis.text = element_text(size = 10)
   )
 
-###################### UNIVARIATE MODELS #####################
+
+############## 5. UNIVARIATE MODELS #####################
 univariate_model<- glm((avgsinkDp) ~ cnpyClass, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.32
@@ -340,8 +348,7 @@ univariate_model<- glm((avgsinkDp) ~  snowDensity.senorge, data = data,  na.acti
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.027
 
-###############################################################
-###################### SNOW HARDNESS MODEL #####################
+############## 6. PREP VARIABLES #####################
 
 # model2_tweedie <- cpglm((avgsinkDp+0.1) ~ scale(sin(sun.time)) * scale(season) * scale(cnpyClass) + scale(cos(sun.time)) * scale(season) * scale(cnpyClass),
 #                         data = play,  na.action = na.omit, family=tweedie(var.power=1.1,link.power=0))
@@ -354,6 +361,7 @@ data$cnpyClass_F <- ifelse(data$cnpyClass == 1, 'closed', 'open')
 data$season_F <- as.factor(data$season)
 data$hotcold_F <- as.factor(data$hotcold)
 data$cloudy_F <- as.factor(data$cloudy)
+data$season_F <- ifelse(data_na.omit$season_F == 0, "early", "late")
 
 table(data$cloudy_F)
 table(data$hotcold_F)
@@ -387,6 +395,7 @@ plot(data$temp.diff, data$avgsinkDp)
 plot(data$doy, data$avgsinkDp)
 plot(data$week, data$avgsinkDp)
 
+############## 7.  WEEK AND TEMPERATURE MODELS ###############################
 
 model1 <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
                        (cos(sun.time))*season_F*cnpyClass_F +
@@ -400,8 +409,9 @@ plot(model1$residuals, model1$fitted.values)
 model1 <- update(model1, na.action = na.fail)
 dredge_results <- dredge(model1)
 top_modelseason <- get.models(dredge_results, 1)[[1]]
-summary(top_modelweek)
-AICc(top_modelweek, model1)
+summary(top_modelseason)
+AICc(top_modelseason, model1)
+saveRDS(top_modelseason, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelseason.rds')
 
 model1_gaus <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
                  (cos(sun.time))*season_F*cnpyClass_F +
@@ -413,28 +423,201 @@ AICc(model1_gaus, model1)
 plot(model1_gaus$residuals, model1_gaus$fitted.values)
 
 
-model1c <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
+model1_densSimp <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
                  (cos(sun.time))*season_F*cnpyClass_F +
                  scale(snowDensity.senorge),
                data = data,  na.action = na.omit,
                family = Tweedie(p=1.1, link = power(0)))
-summary(model1c)
-calculate_deviance_explained(model1c)
-AICc(model1c)
-AICc(model1, model1c)
-plot(model1c$residuals, model1c$fitted.values)
+summary(model1_densSimp)
+calculate_deviance_explained(model1_densSimp)
+AICc(model1_densSimp)
+AICc(model1, model1_densSimp)
+plot(model1_densSimp$residuals, model1_densSimp$fitted.values)
 
-model1z <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c)*cnpyClass_F +
+model1_tempB <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                      (cos(sun.time))*hotcold_F*cnpyClass_F +
+                      scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
+                    data = data,  na.action = na.omit,
+                family = Tweedie(p=1.1, link = power(0)))
+summary(model1_tempB)
+calculate_deviance_explained(model1_tempB)
+AICc(model1_tempB)
+AICc(model1, model1_tempB)
+plot(model1_tempB$residuals, model1_tempB$fitted.values)
+model1_tempB <- update(model1_tempB, na.action = na.fail)
+dredge_results <- dredge(model1_tempB)
+top_modeltempB <- get.models(dredge_results, 1)[[1]]
+summary(top_modeltempB)
+AICc(top_modeltempB, model1)
+saveRDS(top_modeltempB, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempB.rds')
+
+model1_tempBsimp <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                       (cos(sun.time))*hotcold_F*cnpyClass_F +
+                       scale(snowDensity.senorge),
+                     data = data,  na.action = na.omit,
+                     family = Tweedie(p=1.1, link = power(0)))
+summary(model1_tempBsimp)
+calculate_deviance_explained(model1_tempBsimp)
+AICc(model1_tempBsimp)
+AICc(model1, model1_tempBsimp)
+plot(model1_tempBsimp$residuals, model1_tempBsimp$fitted.values)
+model1_tempBsimp <- update(model1_tempBsimp, na.action = na.fail)
+dredge_results <- dredge(model1_tempBsimp)
+top_modeltempBsimp <- get.models(dredge_results, 1)[[1]]
+summary(top_modeltempBsimp)
+AICc(top_modeltempBsimp, model1)
+saveRDS(top_modeltempBsimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempBsimp.rds')
+
+model1_tempBg <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                       (cos(sun.time))*hotcold_F*cnpyClass_F +
+                       scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
+                     data = data,  na.action = na.omit)
+summary(model1_tempBg)
+calculate_deviance_explained(model1_tempBg)
+AICc(model1_tempBg)
+AICc(model1, model1_tempBg)
+plot(model1_tempBg$residuals, model1_tempBg$fitted.values)
+model1_tempBg <- update(model1_tempBg, na.action = na.fail)
+dredge_results <- dredge(model1_tempBg)
+top_modeltempBg <- get.models(dredge_results, 1)[[1]]
+summary(top_modeltempBg)
+AICc(top_modeltempBg, model1)
+saveRDS(top_modeltempBg, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempBg.rds')
+
+model1_temp <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c)*cnpyClass_F +
                   (cos(sun.time))*scale(avg.temp.c)*cnpyClass_F +
                   scale(snowDensity.senorge)*scale(avg.temp.c)*cnpyClass_F,
                 data = data,  na.action = na.omit,
                 family = Tweedie(p=1.1, link = power(0)))
-summary(model1z)
-calculate_deviance_explained(model1z)
-AICc(model1z)
-AICc(model1, model1z)
-plot(model1z$residuals, model1z$fitted.values)
+summary(model1_temp)
+calculate_deviance_explained(model1_temp)
+AICc(model1_temp)
+AICc(model1, model1_temp)
+plot(model1_temp$residuals, model1_temp$fitted.values)
+model1_temp <- update(model1_temp, na.action = na.fail)
+dredge_results <- dredge(model1_temp)
+top_modeltemp <- get.models(dredge_results, 1)[[1]]
+summary(top_modeltemp)
+AICc(top_modeltemp, model1)
+saveRDS(top_modeltemp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltemp.rds')
 
+model1_tempSimp <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c)*cnpyClass_F +
+                      (cos(sun.time))*scale(avg.temp.c)*cnpyClass_F +
+                      scale(snowDensity.senorge),
+                    data = data,  na.action = na.omit,
+                    family = Tweedie(p=1.1, link = power(0)))
+summary(model1_tempSimp)
+calculate_deviance_explained(model1_tempSimp)
+AICc(model1_tempSimp)
+AICc(model1, model1_tempSimp)
+plot(model1_tempSimp$residuals, model1_tempSimp$fitted.values)
+model1_tempSimp <- update(model1_tempSimp, na.action = na.fail)
+dredge_results <- dredge(model1_tempSimp)
+top_modeltempSimp <- get.models(dredge_results, 1)[[1]]
+summary(top_modeltempSimp)
+AICc(top_modeltempSimp, model1)
+saveRDS(top_modeltempSimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempSimp.rds')
+
+
+
+model1_week <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(week)*cnpyClass_F +
+                      (cos(sun.time))*scale(week)*cnpyClass_F +
+                      scale(snowDensity.senorge)*scale(week)*cnpyClass_F,
+                    data = data,  na.action = na.omit,
+                    family = Tweedie(p=1.1, link = power(0)))
+summary(model1_week)
+calculate_deviance_explained(model1_week)
+AICc(model1_week)
+AICc(model1, model1_week)
+plot(model1_week$residuals, model1_week$fitted.values)
+model1_week <- update(model1_week, na.action = na.fail)
+dredge_results <- dredge(model1_week)
+top_modelweek <- get.models(dredge_results, 1)[[1]]
+summary(top_modelweek)
+AICc(top_modelweek, model1)
+saveRDS(top_modelweek, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweek.rds')
+
+model_weektemp1 <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(week)*cnpyClass_F*scale(avg.temp.c) +
+                      (cos(sun.time))*scale(week)*cnpyClass_F*scale(avg.temp.c), # +
+                 #     scale(snowDensity.senorge)*scale(week)*cnpyClass_F*scale(avg.temp.c),
+                    data = data,  na.action = na.omit,
+                    family = Tweedie(p=1.1, link = power(0)))
+summary(model_weektemp1)
+calculate_deviance_explained(model_weektemp1)
+AICc(model_weektemp1)
+AICc(model1, model_weektemp1)
+plot(model_weektemp1$residuals, model_weektemp1$fitted.values)
+model_weektemp1 <- update(model_weektemp1, na.action = na.fail)
+dredge_results <- dredge(model_weektemp1)
+top_modelweektemp1 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelweektemp1)
+AICc(top_modelweektemp1, model1)
+saveRDS(top_modelweektemp1, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp1.rds')
+
+model_weektemp2 <-  gam((avgsinkDp) ~ (sin(sun.time)) * cnpyClass_F +
+                          (cos(sun.time)) * cnpyClass_F +
+                          scale(week) * scale(avg.temp.c) * cnpyClass_F +
+                             scale(snowDensity.senorge) * cnpyClass_F,
+                        data = data,  na.action = na.omit,
+                        family = Tweedie(p=1.1, link = power(0)))
+summary(model_weektemp2)
+calculate_deviance_explained(model_weektemp2)
+AICc(model_weektemp2)
+AICc(model1, model_weektemp2)
+plot(model_weektemp2$residuals, model_weektemp2$fitted.values)
+model_weektemp2 <- update(model_weektemp2, na.action = na.fail)
+dredge_results <- dredge(model_weektemp2)
+top_modelweektemp2 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelweektemp2)
+AICc(top_modelweektemp2, model1)
+saveRDS(top_modelweektemp2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp2.rds')
+
+model_weektemp3 <-  gam((avgsinkDp) ~ (sin(sun.time)) * cnpyClass_F +
+                          (cos(sun.time)) * cnpyClass_F +
+                          scale(week) * cnpyClass_F +
+                          scale(avg.temp.c) * cnpyClass_F +
+                          scale(snowDensity.senorge) * cnpyClass_F,
+                        data = data,  na.action = na.omit,
+                        family = Tweedie(p=1.1, link = power(0)))
+summary(model_weektemp3)
+calculate_deviance_explained(model_weektemp3)
+AICc(model_weektemp3)
+AICc(model1, model_weektemp3)
+plot(model_weektemp3$residuals, model_weektemp3$fitted.values)
+model_weektemp3 <- update(model_weektemp3, na.action = na.fail)
+dredge_results <- dredge(model_weektemp3)
+top_modelweektemp3 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelweektemp3)
+AICc(top_modelweektemp3, model1)
+saveRDS(top_modelweektemp3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp3.rds')
+
+model_weektemp4 <-  gam((avgsinkDp) ~ (sin(sun.time)) * cnpyClass_F +
+                          (cos(sun.time)) * cnpyClass_F +
+                          scale(week) * scale(avg.temp.c) * cnpyClass_F,
+                        data = data,  na.action = na.omit,
+                        family = Tweedie(p=1.1, link = power(0)))
+summary(model_weektemp4)
+calculate_deviance_explained(model_weektemp4)
+AICc(model_weektemp4)
+AICc(model1, model_weektemp4)
+plot(model_weektemp4$residuals, model_weektemp4$fitted.values)
+model_weektemp4 <- update(model_weektemp4, na.action = na.fail)
+dredge_results <- dredge(model_weektemp4)
+top_modelweektemp4 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelweektemp4)
+AICc(top_modelweektemp4, model1)
+saveRDS(top_modelweektemp4, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp4.rds')
+
+
+AICc(top_modelseason,
+     top_modeltemp,
+     top_modelweek,
+     top_modelweektemp1,
+     top_modelweektemp2,
+     top_modelweektemp3)
+
+
+###################################### OLD MODELS ########################
 model1w <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c.prev)*cnpyClass_F +
                   (cos(sun.time))*scale(avg.temp.c.prev)*cnpyClass_F +
                   scale(snowDensity.senorge)*scale(avg.temp.c.prev)*cnpyClass_F,
@@ -482,7 +665,6 @@ calculate_deviance_explained(model1t_glm)
 AICc(model1t_glm)
 AICc(model1, model1t_glm)
 plot(model1t_glm$residuals, model1t_glm$fitted.values)
-# Refit model with na.action = na.fail
 model1t_glm <- update(model1t_glm, na.action = na.fail)
 dredge_results <- dredge(model1t_glm)
 top_model <- get.models(dredge_results, 1)[[1]]
@@ -490,9 +672,7 @@ plot(top_model$residuals, top_model$fitted.values)
 summary(top_model)
 
 inspect <- data[(data$avgsinkDp < 1) & (data$cnpyClass_F =='open'), ]
-
-#saveRDS(top_model, "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model.rds")
-
+saveRDS(top_model, "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model.rds")
 
 model1t_option <-  gam((avgsinkDp) ~ (sin(sun.time))*cnpyClass_F +
                       (cos(sun.time))*cnpyClass_F +
@@ -515,7 +695,6 @@ AICc(top_model2, top_model)
 saveRDS(top_model2, "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model_nointerac_wdens.rds")
 
 #saveRDS(top_model, "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model.rds")
-###############
 
 model1_week <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(week)*cnpyClass_F +
                  (cos(sun.time))*scale(week)*cnpyClass_F +
@@ -547,30 +726,24 @@ top_modeltemp <- get.models(dredge_results, 1)[[1]]
 summary(top_modelweek)
 AICc(top_modelweek, model1)
 
-
-###########
+############### 8. HURDLE MODEL #########
+# [(data$X != 41) | (data$X != 94) | (data$X != 109) ,]
+#install.packages("distributions3")
+#install.packages("topmodels", repos = "https://R-Forge.R-project.org")
+library(topmodels)
 library(pscl)
 data$avgsinkDp_rd <-  round(data$avgsinkDp, 0)
 hist(data$avgsinkDp_rd)
 
 mod.hurdle <- hurdle((avgsinkDp_rd) ~ (sin(sun.time))*cnpyClass_F +
                        (cos(sun.time))*cnpyClass_F +
-                       # scale(snowDensity.senorge)*cnpyClass_F +
+                       scale(snowDensity.senorge)*cnpyClass_F +
                        scale(week)*scale(avg.temp.c)*cnpyClass_F, data = data, dist = "poisson",
                      zero.dist = "binomial")
-
-# [(data$X != 41) | (data$X != 94) | (data$X != 109) ,]
-#install.packages("distributions3")
-#install.packages("topmodels", repos = "https://R-Forge.R-project.org")
-AICc(mod.hurdle)
-library(topmodels)
-# same as this:
-# mod.hurdle <- hurdle(visits ~ ., data = nmes, dist = "poisson",
+AICc(model1, mod.hurdle)
 summary(mod.hurdle)
-calculate_deviance_explained(mod.hurdle)
 rootogram(mod.hurdle, xlim = c(0,12), confint = FALSE, plot = "base")
 plot(residuals(mod.hurdle))
-# Assuming your model is 'model_hurdle'
 residuals_model <- residuals(mod.hurdle)
 outlier_index <- which(abs(residuals_model) > 3)
 # View the row(s) with the outlier
@@ -578,15 +751,28 @@ outlier_data <- data[outlier_index, ]
 print(outlier_data)
 
 ##
-null_model <- glm(avgsinkDp_rd ~ 1, family = poisson(), data = data)  # Null model with intercept only
-logLik_model <- logLik(mod.hurdle)  # Log-likelihood of fitted model
-logLik_null <- logLik(null_model)  # Log-likelihood of null model
+calculate_mcfadden <- function(model) {
+  null_model <- glm(avgsinkDp_rd ~ 1, family = poisson(), data = data)  # Null model with intercept only
+  logLik_model <- logLik(model)  # Log-likelihood of fitted model
+  logLik_null <- logLik(null_model)  # Log-likelihood of null model
+  mcfadden_r2 <- 1 - (as.numeric(logLik_model) / as.numeric(logLik_null))
+  print(mcfadden_r2)
+}
 
-mcfadden_r2 <- 1 - (as.numeric(logLik_model) / as.numeric(logLik_null))
-print(mcfadden_r2)
+calculate_mcfadden(mod.hurdle)
+
+mod.hurdle <- update(mod.hurdle, na.action= na.fail)
+dredge_results <- dredge(mod.hurdle)
+top_modelhurdle <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhurdle)
+calculate_mcfadden(top_modelhurdle)
+AICc(top_modelhurdle, model1)
+saveRDS(top_modelhurdle, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds')
 
 
-###############
+
+
+################################# OTHER OLD MODELS ##################
 model1t_tempdiff <-  gam((avgsinkDp) ~ (sin(sun.time))*cnpyClass_F +
                            (cos(sun.time))*cnpyClass_F +
                            scale(snowDensity.senorge)*cnpyClass_F +
@@ -969,8 +1155,27 @@ AIC(model15)
 calculate_deviance_explained(model15)
 lmtest::bptest(model15)
 
+### other models
+best_model1gam_F <- gam((avgsinkDp) ~ cnpyClass_F + cos(sun.time) +
+                          scale(snowDensity.senorge) + season_F + (sin(sun.time)) +
+                          cnpyClass_F*cos(sun.time) +
+                          cnpyClass_F*scale(snowDensity.senorge) +
+                          cos(sun.time)*season_F +
+                          sin(sun.time)*season_F ,
+                        data = data_na.omit,
+                        family = Tweedie(p=1.1, link = power(0)))
+summary(best_model1gam_F)
+plot(residuals(best_model1gam_F))
+plot(fitted(best_model1gam_F), residuals(best_model1gam_F))
+bp_model <- lm(residuals(best_model1gam_F)^2 ~ fitted(best_model1gam_F))
+bptest(best_model1gam_F)
+AIC(best_model1gam_F) ## 1014.209; other one is better
+calculate_deviance_explained(best_model1gam_F)
+qqnorm(resid(best_model1gam_F))
 
-############ check for overfitting: ######
+
+
+############### 9. OVERFITTING CHECK ########### ######
 
 gam.check(model1)
 
@@ -993,23 +1198,17 @@ predictions <- predict(model_train, newdata = test_data, type = "response")
 test_rmse <- sqrt(mean((test_data$avgsinkDp - predictions)^2))
 test_rmse
 
-#############
+library(caret)
+train_control <- trainControl(method = "cv", number = 10)  # 10-fold CV
+cv_model <- train(
+  formula(top_modelweektemp2),  # Extract formula from model1
+  data = data,
+  method = "glm",   # Change to appropriate method (e.g., 'gam' for GAMs)
+  trControl = train_control
+)
+print(cv_model)
 
-
-
-
-
-# Get log likelihood
-## want to make
-mega_model <- model4
-log_likelihood <- logLik(mega_model)
-# Get k (number of estimated parameters, including the intercept)
-k <- attr(log_likelihood, "df")
-# Print k
-print(k)
-options(na.action = "na.fail")
-
-##### to get final model output ##
+############## 10.ADJUST FOR HETEROSKEDASCITY ##########
 summary(model1d)
 AICc(model1d)
 dredge_results <- dredge(model1d)
@@ -1019,10 +1218,8 @@ sub <- as.data.frame(sub)
 subset(dredge_results, delta < 4)[1]
 head(dredge_results)
 
-
 # To export as a CSV file
 #write.csv(sub, "/Users/catherinebreen/Dropbox/Chapter3/data/dredge_table_LAT_TEMP.csv",)
-
 
 model_gamGLM_TEMP <- gam((avgsinkDp) ~ cnpyClass_F + cos(sun.time) +
                               scale(avg.temp.c) +
@@ -1070,64 +1267,77 @@ AIC(model_GLM_TEMP) ## 1002.333; 1007.316
 saveRDS(model_GLM_TEMP, '/Users/catherinebreen/Dropbox/Chapter3/models/model_GLM_TEMP.rds')
 
 
-### other models
-best_model1gam_F <- gam((avgsinkDp) ~ cnpyClass_F + cos(sun.time) +
-                        scale(snowDensity.senorge) + season_F + (sin(sun.time)) +
-                          cnpyClass_F*cos(sun.time) +
-                          cnpyClass_F*scale(snowDensity.senorge) +
-                          cos(sun.time)*season_F +
-                          sin(sun.time)*season_F ,
-                      data = data_na.omit,
-                      family = Tweedie(p=1.1, link = power(0)))
-summary(best_model1gam_F)
-plot(residuals(best_model1gam_F))
-plot(fitted(best_model1gam_F), residuals(best_model1gam_F))
-bp_model <- lm(residuals(best_model1gam_F)^2 ~ fitted(best_model1gam_F))
-bptest(best_model1gam_F)
-AIC(best_model1gam_F) ## 1014.209; other one is better
-calculate_deviance_explained(best_model1gam_F)
-qqnorm(resid(best_model1gam_F))
 
 
+############## 11. PREDICT AND VISUALIZE #########
 
-###########
-### Now that we have picked the best model we are going to visualize it by predicting data
-# Load necessary libraries
-# Assuming 'data' is your original data frame and 'model' is already fitted as specified
+# best models #
+
+AICc(model1,
+     top_modelseason,
+     top_modeltempB,
+     top_modeltempBg,
+     top_modeltempBsimp,
+     top_modeltemp,
+     top_modeltempSimp,
+     top_modelweek,
+     top_modelweektemp1,
+     top_modelweektemp2,
+     top_modelweektemp3,
+     top_modelweektemp4,
+     top_modelhurdle)
 
 # Create a sequence of sun.time values for prediction
 sun_time_seq <- seq(0, 2*pi, length.out = 1000)
-air.temp.seq <- seq(-7, 4, length.out = 20)
-temp.diff.seq <- seq(2, 20, length.out = 20)
+air.temp.seq <- seq(-7, 4, length.out = 10)
+#temp.diff.seq <- seq(2, 20, length.out = 3)
+week.seq <- seq(5, 18, length.out = 5)
 #avgtemp_seq <- seq(-12, 5, by=1, length.out = 10)
 
 # Create a new data frame for predictions
 pred_data <- expand.grid(
   sun.time = sun_time_seq,
-  season_F = c('early', 'late'),
+  #season_F = c('early', 'late'),
   cnpyClass_F = c('open', 'closed'),
-  Latitude = c(61),
-  avg.temp.c = air.temp.seq, #c(-1, 1),
-  temp.diff = temp.diff.seq,
-  doy = c(45, 105),
+  avg.temp.c = c(-4, 2), #air.temp.seq, #c(-4, 2), #air.temp.seq ## mean > 0 is 2.2 and < 0 is -3.19
+  week = c(7, 12), #week.seq,
   hotcold_F = c('minus','plus'),
   snowDensity.senorge = 300
-
+ # temp.diff = temp.diff.seq,
+ # doy = c(45, 105),
+ # Latitude = c(61),
 )
 
 # Generate predicted values using the model for all combinations of season and cnpyClass
-top_model <- readRDS("/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model.rds")
-top_model_tempdiff <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model_nointerac_wdens_tempdiff.rds')
-model <- top_model_tempdiff #model5
-  #model_gamGLM_LATTEMP #best_model1gam_F #model_gamGLM_LATTEMP
+# top_model <- readRDS("/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model.rds")
+# top_model_tempdiff <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/avg_temp_doy_top_model_nointerac_wdens_tempdiff.rds')
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp3.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp2.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp1.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweek.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltemp.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelseason.rds
+# /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds
+
+model <- top_modeltempSimp #top_modeltempBsimp
+  #top_modeltempSimp
+  #top_modelweektemp4
+  #top_modelweek
+#top_modelweektemp3
+  #top_modelweektemp1 #top_modeltempB #top_modelweektemp2 #model1 #top_modelseason
+  #top_modeltempBg #top_modelweektemp2 #top_modeltemp
+
+#top_model_tempdiff #model5 #model_gamGLM_LATTEMP #best_model1gam_F #model_gamGLM_LATTEMP
 
 pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)$fit
 #pred_data$predicted_hardness <- predict(best_model4, newdata = pred_data, type = "response", se.fit = TRUE)$fit
 pred_data$se <- predict(model, newdata = pred_data[1,], type = "response", se.fit = TRUE)$se.fit
-
 head(pred_data)
 
-pred_data[(pred_data$predicted_hardness < 1) & (pred_data$cnpyClass_F == 'open'),]
+## if hurdle:
+#pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)
+
+
 
 
 ################## PLOT ####################
@@ -1139,14 +1349,118 @@ tick_positions <- c(0, pi/2, pi, 3*pi/2, 2*pi)
 tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
 
 
-
-
-# Plot for Early Season (season == 0)
-colddays_plot <- ggplot(data = pred_data[(pred_data$temp.diff > 0) & (pred_data$doy > 70), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+############## SEASON MODEL PLOT ##############
+earlyseason_plot <- ggplot(data = pred_data[(pred_data$season_F == 'early'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
   geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
- # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  #geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
   geom_point(
-    data = data[data['temp.diff'] > 0,], #$season_F == 'early',],
+    data = data[data['season_F'] == 'early',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+earlyseason_plot
+
+lateseason_plot <- ggplot(data = pred_data[(pred_data$season_F == 'late'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data$season_F == 'late',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+lateseason_plot
+
+grid.arrange(earlyseason_plot, lateseason_plot, ncol=2)
+
+############## WEEK MODEL PLOT ##############
+earlyseason_plot <- ggplot(data = pred_data[(pred_data$week < 10), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  #geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['week'] < 10,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkgreen", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+earlyseason_plot
+
+lateseason_plot <- ggplot(data = pred_data[(pred_data$week > 10), ], aes(x = sun.time, y = predicted_hardness,
+                                                                         color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data$week > 10,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-1,8)
+
+lateseason_plot
+
+grid.arrange(earlyseason_plot, lateseason_plot, ncol=2)
+
+
+############## BINARY TEMP MODEL PLOT ###############
+colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
     alpha = 0.5, position='jitter') +
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
@@ -1166,10 +1480,498 @@ colddays_plot <- ggplot(data = pred_data[(pred_data$temp.diff > 0) & (pred_data$
 
 colddays_plot
 
+warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-1,8)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+############## BINARY TEMP MODEL PLOT GAUSSIAN ###############
+colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-1,8)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+############## TEMP MODEL PLOT ###############
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+ # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
 
 
 
 
+
+############## TEMP SIMP MODEL PLOT ###############
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0 ), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+
+########## WEEK X TEMP MODEL 1 PLOT ########
+
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
+                                                                            linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0) & (pred_data$season_F == 'early') , ], aes(x = sun.time, y = predicted_hardness, linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_line() +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+########## WEEK X TEMP MODEL 2 PLOT ########
+
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
+                                                                            linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0) & (pred_data$season_F == 'early') , ], aes(x = sun.time, y = predicted_hardness, linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_line() +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+
+########## WEEK X TEMP MODEL 3 PLOT ########
+
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
+                                                                            linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0) & (pred_data$season_F == 'early') , ], aes(x = sun.time, y = predicted_hardness, linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_line() +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+
+
+########## WEEK X TEMP MODEL 4 PLOT ########
+
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
+                                                                            linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0) , ], aes(x = sun.time, y = predicted_hardness, linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_line() +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+
+
+########## HURDLE MODEL ########
+
+colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
+                                                                            linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line() +
+  geom_point(
+    data = data[data['avg.temp.c'] < 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c >= 0) & (pred_data$season_F == 'early') , ], aes(x = sun.time, y = predicted_hardness, linetype = factor(week), color = factor(cnpyClass_F))) +
+  geom_line() +
+  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_point(
+    data = data[data['avg.temp.c'] > 0,], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,10)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+
+
+
+
+
+############### DOY PLOT ##################
 
 early_season_plot <- ggplot(data = pred_data[(pred_data$doy < 70) & (pred_data$avg.temp == 1), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
   geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
@@ -1257,7 +2059,8 @@ pred_data2$se <- predict(best_model1gam_F, newdata = pred_data2[1,], type = "res
 
 saveRDS(model3, 'model_cpglm_tweedie.rds')
 
-############
+
+### DENSITY AND SNOW HARDNESSS PLOTS#########
 ## alt c d e f
 pred_data3 <- expand.grid(
   sun.time =  c(0,pi/2, pi, 3*pi/2),
