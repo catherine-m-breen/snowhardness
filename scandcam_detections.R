@@ -557,39 +557,40 @@ hist(data_main$density)
 # fewer columns
 data_main_simp <- readRDS("/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_day_hour_simp2.rds")
 # all columns
-data_main <- readRDS('saveRDS(data_main, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_day_hour_simp_NEW.rds') ###**** this one!')
+data_main <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_day_hour_simp_NEW.rds') ###**** this one!')
 
-data_main_year_day_hour <- data_main %>%
-  group_by(location_id, date, hour) %>%
-  summarize(
-    year = first(year),
-    lynx = sum(lynx),
-    wolf = sum(wolf),
-    hare = sum(hare),
-    roedeer = sum(roedeer),
-    bear = sum(bear),
-    human = sum(human),
-    reddeer = sum(reddeer),
-    moose = sum(moose),
-    num_animals = sum(num_animals),
-    month = first(month),  # Assuming month is constant within a week
-    snowdepth.mm = mean(snowdepth.mm, na.rm = TRUE),
-    avg.temp = mean(avg.temp, na.rm = TRUE),
-    treeloss = mean(treeloss, na.rm = TRUE),
-    treecover = mean(treecover, na.rm = TRUE),
-    cross_0 = sum(cross_0, na.rm = TRUE), ## sum days that cross 0 instead of taking the average
-    humandens = mean(humandens, na.rm = TRUE),
-    pred_day = mean(pred_day, na.rm = TRUE),
-    pred_month = mean(pred_month, na.rm = TRUE),
-    pred_seas = mean(pred_seas, na.rm = TRUE),
-    pred_year = mean(pred_year, na.rm = TRUE)
-  )
+# data_main_year_day_hour <- data_main %>%
+#   group_by(location_id, date, hour) %>%
+#   summarize(
+#     year = first(year),
+#     lynx = sum(lynx),
+#     wolf = sum(wolf),
+#     hare = sum(hare),
+#     roedeer = sum(roedeer),
+#     bear = sum(bear),
+#     human = sum(human),
+#     reddeer = sum(reddeer),
+#     moose = sum(moose),
+#     num_animals = sum(num_animals),
+#     month = first(month),  # Assuming month is constant within a week
+#     snowdepth.mm = mean(snowdepth.mm, na.rm = TRUE),
+#     swe = mean(swe, na.rm = TRUE),
+#     avg.temp = mean(avg.temp, na.rm = TRUE),
+#     treeloss = mean(treeloss, na.rm = TRUE),
+#     treecover = mean(treecover, na.rm = TRUE),
+#     cross_0 = sum(cross_0, na.rm = TRUE), ## sum days that cross 0 instead of taking the average
+#     humandens = mean(humandens, na.rm = TRUE),
+#     pred_day = mean(pred_day, na.rm = TRUE),
+#     pred_month = mean(pred_month, na.rm = TRUE),
+#     pred_seas = mean(pred_seas, na.rm = TRUE),
+#     pred_year = mean(pred_year, na.rm = TRUE)
+#   )
 
-saveRDS(data_main_year_day_hour, file = "/Users/catherinebreen/Dropbox/Chapter3/data_main_occ_pred_count_cam_year_day_hour_simp.rds")
+#saveRDS(data_main_year_day_hour, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_day_hour_simp.rds")
 table(data_main_year_day_hour$cross_0)
 table(data_main_year_day_hour$roedeer)
 
-data_main_year_week <- data_main_simp %>%
+data_main_year_week <- data_main %>%
   group_by(location_id, year, week, hour) %>%
   summarize(
     date = first(date),
@@ -604,6 +605,7 @@ data_main_year_week <- data_main_simp %>%
     num_animals = sum(num_animals),
     month = first(month),  # Assuming month is constant within a week
     snowdepth.mm = mean(snowdepth.mm, na.rm = TRUE),
+    swe = mean(swe, na.rm = TRUE),
     avg.temp = mean(avg.temp, na.rm = TRUE),
     treeloss = mean(treeloss, na.rm = TRUE),
     treecover = mean(treecover, na.rm = TRUE),
@@ -626,7 +628,19 @@ table(data_main_year_week$cross_0)
 
 
 sum(data_main_year_week$roedeer)
-
+saveRDS(data_main_year_week, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/ddata_main_year_week_Feb25.rds")
 
 #saveRDS(data_main_year_week, file = "data_main_occ_pred_count_cam_year_hour_simp_THINNED.rds")
-saveRDS(data_main_year_week, file = " /Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds")
+#saveRDS(data_main_year_week, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds")
+
+
+data <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds')
+
+
+
+
+
+
+
+
+
