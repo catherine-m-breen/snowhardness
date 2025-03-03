@@ -10,7 +10,7 @@ This repository supports the analysis for the paper in prep, "Diel and seasonal 
 There are several coding scripts to support analysis 
 - snowhardness_model.R: cleans field data and derives snow hardness linear model
 - scandcam_detections.R: cleans wildlife detections and identifies hourly detections for each camera for study period
-- scandcam_predictions.R: combines scandcam detections and snowhardness model to generate snow hardness predictions 
+- scandcam_predictions.R: combines scandcam detections and snowhardness model & models detections with GAM
 - overlapPlots.R: Identifies overlap depending on different snow hardness conditions
-- gam_model.R: Idenifies frequency depending on hourly snow hardness values
-- treecanoycover.R: identifies tree canopy for each camera (covariates)
+- covariate scripts
+  - treecanoycover.R: identifies tree canopy for each camera (covariates)
