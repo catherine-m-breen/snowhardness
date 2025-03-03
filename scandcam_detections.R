@@ -303,11 +303,6 @@ merged_df$human[is.na(merged_df$human)] <- 0
 
 ############### 8. Inspect hourly detections ##################
 
-head(merged_df)
-hist(merged_df$human)
-hist(merged_df$roedeer)
-hist(merged_df$lynx)
-
 table(merged_df$lynx)
 table(merged_df$human)
 table(merged_df$roedeer)
@@ -323,12 +318,9 @@ merged_df <- merged_df %>%
   mutate(year = ifelse(is.na(year), year(date), year))
 merged_df <- merged_df %>%
   mutate(month = ifelse(is.na(month), month(date), month))
-head(merged_df)
 
-test <- merged_df %>% filter(location_id == 3160, year == 2022, week == 14)
-table(merged_df$roedeer)
-
-############### 9. save df ##############
+############### 9. save df (opt. start) ##############
+saveRDS(merged_df, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pres_abs_df_day_week_count_Feb25.RDS')
 
 merged_df <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pres_abs_df_day_weeK_count.RDS')
 table(merged_df$hour)
@@ -337,6 +329,10 @@ table(merged_df$hour)
 merged_df_hour <- merged_df %>%
   group_by(location_id, date, hour) %>%
   summarize(
+    Latitude = first(Latitude),
+    LatitudeNum = first(LatitudeNum),
+    Longitude = first(Longitude),
+    LongitudeNum = first(LongitudeNum),
     week = first(week),
     lynx = sum(lynx),
     wolf = sum(wolf),
@@ -354,6 +350,10 @@ saveRDS(merged_df_hour, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pres_a
 merged_df_year_week <- merged_df %>%
   group_by(location_id, year, week, hour) %>%
   summarize(
+    Latitude = first(Latitude),
+    LatitudeNum = first(LatitudeNum),
+    Longitude = first(Longitude),
+    LongitudeNum = first(LongitudeNum),
     week = first(week),
     lynx = sum(lynx),
     wolf = sum(wolf),
@@ -375,9 +375,6 @@ table(merged_df_hour$roedeer)
 
 # saveRDS(merged_df_year_week_thinned, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pres_abs_cam_week_hour_THINNED_clean.RDS')
 saveRDS(merged_df_hour, '/Users/catherinebreen/Dropbox/Chapter3/pres_abs_cam_day_hour_clean.RDS')
-
-####### match with other covariates
-
 
 ############## 10. add snow depth ##############
 ## snow depth
@@ -401,20 +398,9 @@ merged_df$location_id <- as.numeric(merged_df$location_id)
 ## drop na values
 merged_df <- merged_df[!is.na(merged_df$location_id),]
 
-## testing
-senorge[senorge$location_id == 22,]
-test <- merged_df[merged_df$location_id == 22,]
-
-head(merged_df)
-nrow(merged_df)
-nrow(senorge)
-head(senorge)
 senorge2 <- distinct(senorge,location_id,date, snowdepth.mm)
-head(senorge2)
 data_wsnow <- dplyr::left_join(merged_df, senorge2, by = c('location_id', 'date'), unmatched = "drop")
-nrow(merged_df)
-nrow(data_wsnow)
-head(data_wsnow)
+
 
 ############## 11. add avg temperature & and swe (for density) ######
 swe <- read.csv("/Users/catherinebreen/Dropbox/Chapter3/data/swe_senorge_spring_2015_2024_updloc.csv")
@@ -456,12 +442,8 @@ head(treec)
 head(data_wsnowswetemp$year)
 head(treec$year)
 treec$year <- as.numeric(treec$year)
-nrow(data_wsnowswetemp)
 data_wsnowswetemp$year <- year(data_wsnowswetemp$date)
-head(data_wsnowswetemp)
 data_wsnowtree <- dplyr::left_join(data_wsnowswetemp, treec, by = c('location_id','year'), unmatched = "drop")
-head(data_wsnowtree)
-nrow(data_wsnowtree)
 
 ############## 13. add cross0 #####
 head(cross0df)
@@ -531,7 +513,7 @@ saveRDS(data_main, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data
 data_main$week <- week(data_main$date)
 
 hist(data_main$density)
-data_main_simp <- data_main[c('location_id','date','hour','week','year','lynx','wolf','hare','roedeer','bear',
+data_main_simp <- data_main[c('location_id','date','hour','week','year','lynx','wolf','hare','roedeer','bear', 'LatitudeNum', 'LongitudeNum',
                               'human','reddeer','moose','num_animals', 'density',
                               'month','snowdepth.mm','avg.temp','treeloss','treecover',
                               'cross_0','humandens')]
@@ -593,6 +575,10 @@ table(data_main_year_day_hour$roedeer)
 data_main_year_week <- data_main %>%
   group_by(location_id, year, week, hour) %>%
   summarize(
+    Latitude = first(Latitude),
+    LatitudeNum = first(LatitudeNum),
+    Longitude = first(Longitude),
+    LongitudeNum = first(LongitudeNum),
     date = first(date),
     lynx = sum(lynx),
     wolf = sum(wolf),
@@ -634,7 +620,7 @@ saveRDS(data_main_year_week, file = "/Users/catherinebreen/Dropbox/Chapter3/r_ou
 #saveRDS(data_main_year_week, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds")
 
 
-data <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds')
+#data <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_occ_pred_count_cam_year_hour_simp.rds')
 
 
 
