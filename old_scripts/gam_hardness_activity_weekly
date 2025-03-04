@@ -1,0 +1,1150 @@
+
+library(mgcv)
+library(dplyr)
+library(lutz)
+library(beepr)
+library(overlap)
+library(ggplot2)
+library(itsadug)
+
+dat <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/data_main_occ_pred_count_cam_year_hour_simp.rds')
+
+dat <- as.data.frame(dat)
+
+dat_cross0 <- dat[dat['cross_0'] >3,]
+
+## check predator density
+
+# Create the histogram with ggplot
+ggplot(dat_cross0, aes(x = pred_month)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Monthly Predator Density",
+       x = "Predictions",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  )
+
+# Create the histogram with ggplot
+mean(na.omit(dat_cross0$humandens))
+ggplot(dat_cross0, aes(x = humandens)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Human Density",
+       x = "Predictions",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  )
+
+
+## predictions
+model_tweedie <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/linear_model_tweedie.rds')
+model_cpglm_base <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/model_cpglm_tweedie.rds')
+model_cpglm_temp <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/cpglm_tweedie_wmintemp.rds')
+
+### add in new lat/long data
+dat2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/Neri_data/LocationsKatie.rds')
+unique(dat2$LokalitetID)
+dat2$Latitude <-  st_coordinates(dat2$geometry)[, "Y"]
+dat2$Longitude <- st_coordinates(dat2$geometry)[, "X"]
+head(dat2)
+dat2 <- dat2 %>% st_drop_geometry()
+## put in string format so that we don't have issues with rounding errors
+dat2$Latitude <- as.character(dat2$Latitude)
+dat2$Longitude <- as.character(dat2$Longitude)
+dat2$location_id <- dat2$LokalitetID
+dat2 <- dat2[c('location_id','Latitude',"Longitude")]
+head(dat2)
+
+temp_data <- dat %>%
+  left_join(dat2, by = "location_id", suffix = c("", ".lookup"))
+
+dat3 <- temp_data[c('location_id','year','week','date','hour','lynx','wolf','hare','roedeer','bear','human','reddeer','moose', 'num_animals',
+                          'month','year','snowdepth.mm','avg.temp','treeloss','treecover',
+                          'cross_0','humandens','pred_day','pred_month','pred_seas','pred_year','Latitude','Longitude')]
+
+dat3$LatitudeNum <- as.numeric(dat3$Latitude)
+dat3$LongitudeNum <- as.numeric(dat3$Longitude)
+
+dat3$timeZone <- lutz::tz_lookup_coords(lat=dat3$LatitudeNum, lon = dat3$LongitudeNum, warn = FALSE, method = "accurate")
+
+Dates<- as.POSIXct(dat3$date, tz = 'Europe/Oslo')
+
+coords <- dat3[,c("LongitudeNum", "LatitudeNum")]
+dat3$coords <- coords
+# Coords_SPDF <- SpatialPointsDataFrame(coords, proj4string = CRS("+init=epsg:4269 +proj=longlat +datum=NAD83"), data = main_data)
+Coords_SPDF1 <- SpatialPointsDataFrame(dat3$coords, proj4string = CRS("+init=epsg:4269 +proj=longlat +datum=NAD83"), data = dat3$coords)
+Coords_SPDF2 <- Coords_SPDF1[1:10000,]
+Coords_SPDF3 <- Coords_SPDF1[10001:20000,]
+
+dat3$rads <- astroFns::hms2rad(dat3$hour)
+suntimes <- overlap::sunTime(dat3$rads, Dates, Coords_SPDF1)
+
+saveRDS(suntimes, 'suntimes_year_week_hour.rds')
+
+dat3$sun.time <- suntimes
+saveRDS(dat3, 'GAM_data_day_week_hour.rds')
+
+######################################################################################################s
+######################################################################################################
+######################################################################################################
+######################################################################################################
+################## start here. ##################################
+main_data <- readRDS('GAM_data_day_week_hour.rds')
+head(main_data)
+nrow(main_data)
+
+main_data <- main_data %>% filter(month %in% c(2,3,4,5))  %>%
+  mutate(season = ifelse(month %in% c(2,3), 0, 1)) %>%
+  mutate(cnpyClass = ifelse(treecover < 50, 0, 1))
+
+head(main_data)
+unique(main_data$cross_0)
+# Predicts the values with confidence interval
+model_tweedie <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/linear_model_tweedie.rds')
+model_cpglm_base <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/model_cpglm_tweedie.rds')
+model_cpglm_temp <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/cpglm_tweedie_wmintemp.rds')
+
+predictions <- stats::predict(model_tweedie, newdata = main_data, type = 'response', se.fit = TRUE)
+hist(predictions$fit)
+length(predictions$fit)
+hist(predictions$se.fit)
+main_data$predictions_glm <- predictions$fit
+main_data$se_glm <- predictions$se.fit
+nrow(main_data)
+
+ggplot(main_data, aes(x = predictions_glm)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Snow Hardness Predictions (n = 910992)",
+       x = "Predictions",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  )
+
+predictions <- predict(model_cpglm_base, newdata = main_data, type = 'response')
+hist(predictions)
+main_data$predictions_cpglm <- predictions
+#main_data$se_glm <- predictions$se.fit
+
+ggplot(main_data, aes(x = predictions_cpglm)) +
+  geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Predictions (n = 910992)",
+       x = "Predicted Snow Hardness (cm)",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10)
+  )
+
+
+saveRDS(main_data, 'main_data_predictions_presAbs_year_week_hour.rds')
+
+
+## predator monthly = 0; human density < 40 (average human density at cameras)
+main_data$roedeer_binary <- ifelse(main_data$roedeer >= 1, 1, 0)
+main_data$hare_binary <- ifelse(main_data$hare >= 1, 1, 0)
+main_data$lynx_binary <- ifelse(main_data$lynx >= 1, 1, 0)
+
+main_data2 <- main_data[main_data$cross_0>3,]
+nrow(main_data2)
+
+
+
+### ROE DEER
+
+# modelr <- gam(roedeer_binary ~ s(humandens), family = binomial(), data = main_data2, method = "REML")
+# summary(modelr)
+# plot(modelr, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelr_cts <- gam(roedeer ~ s(humandens), data = main_data2, method = "REML")
+# summary(modelr_cts)
+# tidy(modelr_cts)
+# plot(modelr_cts, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelr_p <- gam(roedeer_binary ~ s(pred_month), family = binomial(), data = main_data2, method = "REML")
+# summary(modelr_p)
+# tidy(modelr_p)
+# plot(modelr_p, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelr_p_cts <- gam(roedeer ~ s(pred_month), data = main_data2, method = "REML")
+# summary(modelr_p)
+# tidy(modelr_p_cts)
+# plot(modelr_p_cts, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+
+# modelr_ps <- gam(roedeer_binary ~ s(pred_seas), family = binomial(), data = main_data2, method = "REML")
+# summary(modelr_ps)
+# plot(modelr_ps, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+
+# modelr_pd <- gam(roedeer ~ s(pred_day), data = main_data2, method = "REML")
+# summary(modelr_pd)
+# plot(modelr_pd, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelr_py <- gam(roedeer_binary ~ s(pred_year), family = binomial(), data = main_data2, method = "REML")
+# summary(modelr_py)
+# plot(modelr_py, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+
+
+## HARE
+
+# modelh_h <- gam(hare_binary ~ s(humandens), family = binomial(), data = main_data2, method = "REML")
+# summary(modelh_h)
+# tidy(modelh_h)
+# plot(modelh_h, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelh_h_cts <- gam(hare ~ s(humandens), data = main_data2, method = "REML")
+# summary(modelh_h_cts)
+# tidy(modelh_h_cts)
+# plot(modelh_h_cts, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelh_p <- gam(hare_binary ~ s(pred_month), family = binomial(), data = main_data2, method = "REML")
+# summary(modelh_p)
+# tidy(modelh_p)
+# plot(modelh_p, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+#      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+#
+# modelh_p_cts <- gam(hare ~ s(pred_month), data = main_data2, method = "REML")
+# summary(modelh_p_cts)
+# tidy(modelh_p_cts)
+# # plot(modelh_p_cts, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+# #      shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+# #
+#
+# # main_data_cross_0 <- main_data1[main_data1$cross_0 == 1,]
+# mean(na.omit(main_data2$humandens))
+# roedeer_plot_H <- ggplot(data = main_data2, aes(x = humandens, y = roedeer)) +
+#   geom_jitter(height = 0.1) +
+#   labs(x = "Human Density",
+#        y = "Roe Deer Counts per Cam-Year-Week-Hour") +
+#   theme_bw() +
+#   theme(text = element_text(size = 14)) +
+#   scale_y_continuous(breaks = c(0, 1))  +
+#   geom_vline(xintercept = 47, linetype = "dashed", color = "red")
+# roedeer_plot_H
+#
+# roedeer_plot_P <- ggplot(data = main_data2, aes(x = pred_month, y = roedeer)) +
+#   geom_jitter(height = 0.1) +
+#   labs(x = "Monthly Predator Density",
+#        y = "Roe Deer Detection Presence (0,1) per Camera-Day-Hour") +
+#   theme_bw() +
+#   theme(text = element_text(size = 14)) +
+#   scale_y_continuous(breaks = c(0, 1))  +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "red")
+# roedeer_plot_P
+#
+# hare_plot_H <- ggplot(data = main_data2, aes(x = humandens, y = hare)) +
+#   geom_jitter(height = 0.1) +
+#   labs(x = "Human Density",
+#        y = "Roe Deer Counts per Cam-Year-Week-Hour") +
+#   theme_bw() +
+#   theme(text = element_text(size = 14)) +
+#   scale_y_continuous(breaks = c(0, 1))  +
+#   geom_vline(xintercept = 47, linetype = "dashed", color = "red")
+# hare_plot_H
+#
+# hare_plot_P <- ggplot(data = main_data2, aes(x = pred_month, y = hare)) +
+#   geom_jitter(height = 0.1) +
+#   labs(x = "Monthly Predator Density",
+#        y = "Roe Deer Detection Presence (0,1) per Camera-Day-Hour") +
+#   theme_bw() +
+#   theme(text = element_text(size = 14)) +
+#   scale_y_continuous(breaks = c(0, 1))  +
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "red")
+# hare_plot_P
+#
+# grid.arrange(roedeer_plot_H, roedeer_plot_P, hare_plot_H, hare_plot_P)
+
+library(elevatr)
+library(terra)
+# Pull elevation data
+latlong_data <- data.frame(main_data2[c('LongitudeNum', 'LatitudeNum', 'location_id')])
+colnames(latlong_data) <- c('x','y','location_id')
+elevations <- get_elev_point(locations = latlong_data, prj = "+proj=longlat +datum=WGS84", src = "aws")
+dem_data <- get_elev_raster(locations = latlong_data, z = 10, prj = "+proj=longlat +datum=WGS84", src = "aws")
+dem_data5 <- get_elev_raster(locations = latlong_data, z = 5, prj = "+proj=longlat +datum=WGS84", src = "aws")
+dem_raster <- rast(dem_data)
+plot(dem_raster)
+slope_raster <- terrain(dem_raster, v = "slope", unit = "degrees")
+plot(slope_raster)
+
+elev <- vector("numeric", length = nrow(mts))
+main_data2$elevations <- elevations$elevation
+
+
+# Create a SpatVector of your points from the latitude and longitude data
+points <- vect(latlong_data, geom = c("x", "y"), crs = "+proj=longlat +datum=WGS84")
+slopes <- extract(slope_raster, points)
+slopes <- slopes$slope
+print(slopes)
+main_data2$slopes <- slopes
+
+hist(main_data2$slopes)
+
+unique(main_data2$cross_0)
+
+main_data_allsnow <- filter(main_data2, cross_0 > 3)## snowdepth.mm < 30)
+#main_data_snow30 <- filter(main_data2, pred_month == 0 & humandens < 40, cross_0 > 3, snowdepth.mm > 30)
+
+main_data_snow10_120 <- filter(main_data2, cross_0 > 3, roedeer > 0)
+hist(main_data_snow10_120$elevations)
+hist(main_data_snow10_120$snowdepth.mm, breaks=200)
+main_data_snow10_120 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 200, roedeer_binary > 0)
+
+main_data_snow10_120 <- filter(main_data2, cross_0 > 3, location_id == '4652', roedeer>0)
+main_data_snow10_120 <- filter(main_data2, cross_0 > 3, location_id == '4655', roedeer>0)
+main_data_snow10_120 <- filter(main_data2, cross_0 > 3, location_id == '4654', roedeer>0)
+nrow(main_data_snow10_120)
+4655
+
+main_data_snow10 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 10)
+#main_data_snow10 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 10, snowdepth.mm <200)
+main_data_snow10_200 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 10, snowdepth.mm <200)
+main_data_snow10_220 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 10, snowdepth.mm <220)
+main_data_snow10_noTroCam <- filter(main_data2, cross_0 > 3, snowdepth.mm > 10,
+                                    location_id != '4652', location_id != '4655', location_id != '4654')
+
+main_data_snow15 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 15)
+main_data_snow20 <- filter(main_data2, cross_0 > 3, snowdepth.mm > 20)
+head(main_data_snow10)
+#####
+### most conservative model
+main_data_allsnow_clean <- main_data_allsnow %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+main_data_10_clean <- main_data_snow10 %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+main_data_10_200_clean <- main_data_snow10_200 %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+main_data_snow10_noTroCam <- main_data_snow10_noTroCam %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+
+main_data_10_220_clean <- main_data_snow10_220 %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+
+
+main_data_15_clean <- main_data_snow10 %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+
+main_data_20_clean <- main_data_snow20 %>%
+  filter(!is.na(roedeer_binary) & !is.na(sun.time) & !is.na(predictions_cpglm)
+         & !is.na(snowdepth.mm))
+table(main_data_20_clean$roedeer_binary)
+
+
+####
+r_allvar_bam <- bam(roedeer ~ s(sun.time, bs='cc') +
+  s(predictions_cpglm, bs='tp') +
+  te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+  s(snowdepth.mm, bs='tp') +
+  te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+  te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')) +
+  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+  data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+beep()
+
+r_allvar_bam10_canopy <- bam(roedeer ~ s(sun.time, bs='cc') +
+                      s(predictions_cpglm, bs='tp') +
+                      s(treecover, bs = 'tp') +
+                      te(sun.time, predictions_cpglm, treecover, bs=c('cc','tp', 'tp')) +
+                      s(snowdepth.mm, bs='tp') +
+                      te(snowdepth.mm, predictions_cpglm, treecover, bs=c('tp','tp','tp')) +
+                      te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')) +
+                      te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                    data = main_data_10_clean, family = tw(), method = 'fREML', na.rm = TRUE)
+beep()
+
+r_allvar_bam <- bam(roedeer ~ s(sun.time, bs='cc') +
+                      s(predictions_cpglm, bs='tp') +
+                      te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                      s(snowdepth.mm, bs='tp') +
+                      te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+                      te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')) +
+                      te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                    data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam2 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                      s(predictions_cpglm, bs='tp') +
+                     # te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                      s(snowdepth.mm, bs='tp') +
+                     # te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+                      te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')), # +
+                    #  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                    data = main_data_10_200_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam2_ts <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('ts','ts', 'cc')), # +
+                     #  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                     data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+summary(r_allvar_bam2_ts)
+saveRDS(r_allvar_bam2_ts, 'r_allvar_bam2_ts.rds')
+gratia::draw(r_allvar_bam2_ts,
+             # select = 4,
+             scales='free',
+             rug=NULL, #ci.level=0.9999,
+             continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis"))
+
+h_allvar_bam2_ts <- bam(hare ~ s(sun.time, bs='cc') +
+                          s(predictions_cpglm, bs='ts') +
+                          s(snowdepth.mm, bs='ts') +
+                          te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('ts','ts', 'cc')), # +
+                        #  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                        data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+beep()
+summary(h_allvar_bam2_ts)
+saveRDS(h_allvar_bam2_ts, 'h_allvar_bam2_ts.rds')
+gratia::draw(h_allvar_bam2_ts,
+             # select = 4,
+             scales='free',
+             rug=NULL, #ci.level=0.9999,
+             continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis"))
+
+r_allvar_bam3 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')),
+                       #te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')), # +
+                     #  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                     data = main_data_10_200_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam4 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')),
+                     #te(snowdepth.mm, predictions_cpglm, sun.time, bs=c('tp','tp', 'cc')), # +
+                     #  te(sun.time, snowdepth.mm, bs=c('cc','tp')),
+                     data = main_data_10_220_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam5 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+                       s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_200_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam6 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+                       s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_snow10_noTroCam, family = tw(), method = 'REML', na.rm = TRUE)
+##***
+r_allvar_bam7 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_snow10_noTroCam, family = tw(), method = 'REML', na.rm = TRUE)
+
+
+r_allvar_bam8_ <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='tp') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','tp')) +
+                       s(snowdepth.mm, bs='tp') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('tp','tp')) +
+                       s(week, bs='re'), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+##running
+### this one looksgood!!! ###
+r_allvar_bam8 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')), # +
+                     #  s(week, bs='re'), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+plot_smooth(r_allvar_bam8, view="sun.time", cond=list(predictions_cpglm=c(1, 3, 5, 4, 2, 3)),
+            rug=TRUE, se=FALSE, col=rainbow(3))
+
+saveRDS(r_allvar_bam8, 'r_allvar_bam8.rds')
+summary(r_allvar_bam8)
+gratia::draw(r_allvar_bam8,
+             # select = 4,
+             scales='free',
+             rug=NULL, #ci.level=0.9999,
+             continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis"))
+# Generate predictions for a range of sun.time and predictions_cpglm
+
+pp <- get_predictions(r_allvar_bam8,
+                      cond=list(predictions_cpglm=seq(0,6), sun.time=seq(0,2*pi,length=100)))
+
+head(predictionsT)
+ggplot(pp, aes(x = sun.time, y = fit, color = predictions_cpglm)) +
+  geom_line() +
+  labs(x = "Sun Time", y = "Predicted Roe Deer Activity", color = "Predictions") +
+  theme_minimal()
+
+h_allvar_bam8 <- bam(hare ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')), # +
+                     #  s(week, bs='re'), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+
+gratia::draw(h_allvar_bam8,
+             # select = 4,
+             scales='free',
+             rug=NULL, #ci.level=0.9999,
+             continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis"))
+saveRDS(h_allvar_bam8, 'h_allvar_bam8.rds')
+summary(h_allvar_bam8)
+plot_smooth(h_allvar_bam8, view="sun.time", cond=list(predictions_cpglm=c(1, 3, 5, 4, 2, -5)),
+            rug=TRUE, se=FALSE, col=rainbow(3))
+
+new_data <- expand.grid(sun.time = seq(min(main_data_10_clean$sun.time), max(main_data_10_clean$sun.time), length.out = 100),
+                        predictions_cpglm = seq(min(main_data_10_clean$predictions_cpglm), max(main_data_10_clean$predictions_cpglm), length.out = 5),
+                        snowdepth.mm = 200)
+new_data$fit <- predict(r_allvar_bam8, newdata = new_data, type = "response")
+d <- ggplot(new_data, aes(x = sun.time, y = predictions_cpglm, fill = fit)) +
+  geom_tile() +
+  scale_fill_viridis_c(limits = c(0,0.04)) +  # Set consistent limits
+  labs(x = "Sun Time", y = "Predictions CPGLM", fill = "Predicted Activity") +
+  theme_minimal()
+d
+library(gridExtra)
+grid.arrange(a, b, c, d, ncol =4)
+
+new_data$fit <- predict(h_allvar_bam8, newdata = new_data, type = "response")
+d <- ggplot(new_data, aes(x = sun.time, y = predictions_cpglm, fill = fit)) +
+  geom_tile() +
+  scale_fill_viridis_c(limits = c(0,10)) +  # Set consistent limits
+  labs(x = "Sun Time", y = "Predictions CPGLM", fill = "Likelihood of detection") +
+  theme_minimal()
+d
+library(gridExtra)
+grid.arrange(a, b, c, d, ncol =4)
+
+r_allvar_bam8_B <- bam(roedeer_binary ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')), # +
+                     #  s(week, bs='re'), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_clean, family = binomial(), method = 'REML', na.rm = TRUE)
+
+
+r_allvar_bam8_200 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')), # +
+                     #  s(week, bs='re'), # +
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_200_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam8_220 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                           s(predictions_cpglm, bs='ts') +
+                           te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                           s(snowdepth.mm, bs='ts') +
+                           te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')), # +
+                         #  s(week, bs='re'), # +
+                         #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                         data = main_data_10_220_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+
+## to do ##
+r_allvar_bam9 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')) +
+                       s(week, by = location_id, bs='cc') +
+                       s(location_id, bs='re') ,
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+r_allvar_bam10 <- bam(roedeer ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm, bs='ts') +
+                       s(snowdepth.mm, bs='ts') +
+                       te(snowdepth.mm, predictions_cpglm, bs=c('ts','ts')) +
+                        te(sun.time, predictions_cpglm, bs=c('cc','ts')) +
+                        te(sun.time, snowdepth.mm, bs=c('cc','ts')) ,
+
+                     #  s(location_id, bs = 're'),  # Add cameraID as a random effect
+                     data = main_data_10_200_clean, family = tw(), method = 'REML', na.rm = TRUE)
+
+
+
+beep()
+
+####
+summary(h_allvar_bam8)
+summary(r_allvar_bam10_canopy)
+plot(r_allvar_bam8, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(r_allvar_bam)[1])
+#gamtabs(test1)
+library("itsadug")
+fvisgam(r_allvar_bam8, view=c("snowdepth.mm", "predictions_cpglm"))
+fvisgam(r_allvar_bam20, view=c("sun.time", "predictions_cpglm"))
+fvisgam(h_allvar_bam8, view=c("sun.time", "predictions_cpglm"))
+par(mfrow=c(1,1))
+vis.gam(r_allvar_bam10, view=c("sun.time", "predictions_cpglm"), plot.type='contour')
+gratia::draw(h_allvar_bam8,
+            # select = 4,
+             scales='free',
+             rug=NULL, #ci.level=0.9999,
+             continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis"))
+
+
+## this one looks fine! but should we be worried that sun time and predictions are in it together?
+vif(main_data_20_clean)  # Check for multicollinearity
+test1 <- gam(roedeer_binary ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(snowdepth.mm) +
+               s(snowdepth.mm, predictions_cpglm, bs='tp') +
+              s(sun.time, predictions_cpglm), #bs=c('cc','tp')
+             data = main_data_20_clean, family = binomial(),
+             method = "REML", na.rm=TRUE)
+library(car)
+vif(main_data_20_clean)
+test1 <- gam(roedeer_binary ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(snowdepth.mm) +
+               te(snowdepth.mm, predictions_cpglm, bs=c('tp', 'tp')) +
+              te(sun.time, predictions_cpglm, bs=c('cc','tp')),
+             data = main_data_20_clean, family = binomial(),
+             method = "REML", na.rm=TRUE)
+
+# Tweedie(p=1.1, link = power(0))
+test2 <- gam(roedeer_binary ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(snowdepth.mm) +
+               te(snowdepth.mm, predictions_cpglm, bs=c('tp', 'tp')), # +
+              # te(sun.time, predictions_cpglm, bs=c('cc','tp')),
+             data = main_data_20_clean, family = binomial(), #tw(),
+             method = "REML", na.rm=TRUE)
+
+
+test2r <- gam(roedeer ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(snowdepth.mm) +
+                te(snowdepth.mm, predictions_cpglm, bs=c('tp', 'tp')) +
+              te(sun.time, predictions_cpglm, bs=c('cc','tp')),
+              data = main_data_10_clean, family = tw(),
+              method = "REML", na.rm=TRUE)
+
+cor.test(main_data_20_clean$sun.time, main_data_20_clean$predictions_cpglm)
+
+test2h <- gam(hare ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(snowdepth.mm) +
+               te(snowdepth.mm, predictions_cpglm, bs=c('tp', 'tp')) +
+               te(sun.time, predictions_cpglm, bs=c('cc','tp')),
+             data = main_data_10_clean, family = tw(),
+             method = "REML", na.rm=TRUE)
+summary(test2h)
+cor.test(main_data_20_clean[main_data_20_clean$hare > 0,]$sun.time, main_data_20_clean[main_data_20_clean$hare > 0,]$predictions_cpglm)
+cor.test(main_data_20_clean[main_data_20_clean$roedeer > 0,]$sun.time, main_data_20_clean[main_data_20_clean$roedeer > 0,]$predictions_cpglm)
+
+summary(test2h)
+library(beepr)
+beepr::beep()
+# can easily visualize with gratia package
+tick_positions <- c(0, pi/2, pi, 3*pi/2, 2*pi)
+tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
+
+text_size <- 14
+hare_gam_plotA <- gratia::draw(h_allvar_bam8,
+                               select = 1,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('')+
+  ylab('Effect on Hare Detection') +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "grey") + # Add vertical
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  ggtitle('A') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 1, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+hare_gam_plotB <- gratia::draw(h_allvar_bam8,
+                               select = 2,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('\n Snow Hardness (cm)')+
+  ylab('Effect on Hare Detection') +
+  ggtitle('B') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+hare_gam_plotC <- gratia::draw(h_allvar_bam8,
+                               select = 4,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('Snow Depth (cm)')+
+  ylab('Effect on Hare Detection') +
+  ggtitle('C') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+hare_gam_plotD <- gratia::draw(h_allvar_bam8,
+                              select = 5,
+                              scales='free',
+                              rug=NULL, #ci.level=0.9999,
+                              continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('Snow Depth (cm)')+
+  ylab('Snow Hardness (cm) \n')+
+  ggtitle('D')+
+  theme_classic() +
+  theme(
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 0, 0.5, 0), "cm"),
+        plot.title = element_text(size = 20, colour = 'black'))
+
+
+hare_gam_plotE <- gratia::draw(h_allvar_bam8,
+                               select = 3,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('')+
+  ylab('Snow Hardness (cm) \n') +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  ggtitle('E')+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+    axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+    axis.text.y = element_text(size =text_size, colour = 'black'),
+    axis.title.y = element_text(size = text_size, colour = 'black'),
+    plot.margin = unit(c(0.5, 0, 0.5, 0), "cm"),
+    plot.title = element_text(size = 20, colour = 'black'))
+summary(test2h)
+grid.arrange(hare_gam_plotA, hare_gam_plotB, hare_gam_plotC, hare_gam_plotD, hare_gam_plotE, ncol= 5)
+grid.arrange(hare_gam_plotA, hare_gam_plotB, hare_gam_plotC, hare_gam_plotE, hare_gam_plotD, ncol= 3, nrow=2)
+#grid.arrange(hare_gam_plotA, hare_gam_plotB, hare_gam_plotC, hare_gam_plotD, hare_gam_plotE, nrow= 5)
+
+
+grid.arrange(hare_gam_plotB,hare_gam_plotD, hare_gam_plotE, ncol= 3)
+
+
+grid.arrange(hare_gam_plotA,hare_gam_plotB, hare_gam_plotC, ncol= 3)
+grid.arrange(hare_gam_plotD,hare_gam_plotE, ncol= 2)
+
+# Combine first set of plots (3 plots)
+first_row <- plot_grid(hare_gam_plotA, hare_gam_plotB, hare_gam_plotC, ncol = 3, align = 'h', rel_widths = c(1, 1, 1))
+second_row <- plot_grid(hare_gam_plotD, hare_gam_plotE, ncol = 2, align = 'h', rel_widths = c(1, 1))
+combined_plot <- plot_grid(first_row, second_row, ncol = 1, rel_heights = c(1, 1))
+
+
+####################################
+summary(test2r)
+
+roedeer_gam_plotA <- gratia::draw(r_allvar_bam8,
+                               select = 1,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('')+
+  ylab('Effect on Deer Detection') +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "grey") + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "grey") + # Add vertical
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  ggtitle('A') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 1, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+roedeer_gam_plotB <- gratia::draw(r_allvar_bam8,
+                               select = 2,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab(' \n Snow Hardness (cm)')+
+  ylab('Effect on Deer Detection') +
+  ggtitle('B') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+roedeer_gam_plotC <- gratia::draw(r_allvar_bam8,
+                               select = 4,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('Snow Depth (cm)')+
+  ylab('Effect on Deer Detection') +
+  ggtitle('C') +
+  theme_classic() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+        axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+        axis.text.y = element_text(size =text_size, colour = 'black'),
+        axis.title.y = element_text(size = text_size, colour = 'black'),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+        plot.title = element_text(size = 20, colour = 'black')) +
+  geom_hline(yintercept=0, linetype="dashed", color = "red")
+
+roedeer_gam_plotD <- gratia::draw(r_allvar_bam8,
+                               select = 5,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('Snow Depth (cm)')+
+  ylab('Snow Hardness (cm) \n')+
+  ggtitle('E')+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+    axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+    axis.text.y = element_text(size =text_size, colour = 'black'),
+    axis.title.y = element_text(size = text_size, colour = 'black'),
+    plot.margin = unit(c(0.5, 0, 0.5, 0), "cm"),
+    plot.title = element_text(size = 20, colour = 'black'))
+
+
+roedeer_gam_plotE <- gratia::draw(r_allvar_bam8,
+                               select = 3,
+                               scales='free',
+                               rug=NULL, #ci.level=0.9999,
+                               continuous_fill = paletteer::scale_fill_paletteer_c("grDevices::Viridis")) +
+  xlab('')+
+  ylab('Snow Hardness (cm) \n') +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  ggtitle('D')+
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = text_size, angle = 0, colour = 'black'), # Rotate x-axis labels
+    axis.title.x = element_text(size = text_size, colour = 'black'),       # Increase x-axis title text size
+    axis.text.y = element_text(size =text_size, colour = 'black'),
+    axis.title.y = element_text(size = text_size, colour = 'black'),
+    plot.margin = unit(c(0.5, 0, 0.5, 0), "cm"),
+    plot.title = element_text(size = 20, colour = 'black'))
+
+
+# Combine first set of plots (3 plots)
+first_rowR <- plot_grid(roedeer_gam_plotA, roedeer_gam_plotB, roedeer_gam_plotC,
+                       ncol = 3, align = 'h', rel_widths = c(1, 1, 1))
+second_rowR <- plot_grid(roedeer_gam_plotE, roedeer_gam_plotD, ncol = 2,
+                        align = 'h', rel_widths = c(1, 1))
+combined_plotR <- plot_grid(first_rowR, second_rowR, ncol = 1, rel_heights = c(1, 1))
+combined_plot
+combined_plotR
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Contour plot with vis.gam
+library(viridis)
+vis.gam(test2r, view = c("sun.time", "predictions_cpglm"), plot.type = "contour", color = "topo")
+vis.gam(test2r, view = c("snowdepth.mm", "predictions_cpglm"), plot.type = "contour", color = "heat")
+vis.gam(test2h, view = c("sun.time", "predictions_cpglm"), plot.type = "contour", color = "heat")
+gratia::draw(test2r, select = "te(sun.time,predictions_cpglm)")
+
+plot(test1, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(test1)[1])
+#gamtabs(test1)
+library("itsadug")
+fvisgam(test1, view=c("snowdepth.mm", "predictions_cpglm"))
+fvisgam(test1, view=c("sun.time", "predictions_cpglm"))
+fvisgam(test1, view=c("sun.time", "predictions_cpglm"))
+
+
+test1 <- gam(hare_binary ~ s(sun.time, bs='cc') ,
+             data = main_data_allsnow, family = binomial(),
+             method = "REML", na.rm=TRUE)
+plot(test1, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(test1)[1])
+
+test1 <- gam(hare ~ s(sun.time, bs='cc') ,
+             data = main_data_allsnow,
+             method = "REML", na.rm=TRUE)
+plot(test1, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(test1)[1])
+
+testB <- gam(roedeer_binary ~ s(sun.time, bs='cc') ,
+            data = main_data_allsnow, family = binomial(),
+            method = "REML", na.rm=TRUE)
+plot(test, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(test)[1])
+
+test <- gam(roedeer ~ s(sun.time, bs='cc') ,
+            data = main_data_allsnow,
+            method = "REML", na.rm=TRUE)
+plot(test, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(test)[1])
+
+main_data_snow30_clean <- main_data_snow30 %>%
+  filter(!is.na(roedeer) & !is.na(sun.time) & !is.na(predictions_cpglm))
+
+modelr_snow30 <- gam(roedeer ~ s(sun.time, bs='cc') +
+                s(predictions_cpglm) + #bs ='tp'
+                s(sun.time, predictions_cpglm, bs='tp'), # bs=c('cc','tp')),
+                data = main_data_snow30_clean, method = "REML", na.rm=TRUE)
+# modelr <- gam(roedeer ~ s(sun.time, bs='cc') + s(predictions) + s(predictions,sun.time, bs=('cc','tp')),
+#               data = main_data_cross_0_nopred, family = binomial(), method = "REML", na.rm=TRUE)
+
+summary(modelr_snow30)
+summary(modelr_snow30)$dev.expl*100
+gam.check(modelr_snow30)
+beep()
+
+cor.test(main_data_snow30$sun.time, main_data_snow30$predictions_cpglm)
+
+plot(modelr_snow30, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr_snow30)[1])
+library("itsadug")
+fvisgam(modelr_snow30, view=c("sun.time", "predictions_cpglm"))
+
+
+####################
+modelrB_snow30 <- gam(roedeer_binary ~ s(sun.time, bs='cc') +
+                       s(predictions_cpglm) + #bs ='tp'
+                       s(sun.time, predictions_cpglm, bs='tp'), # bs=c('cc','tp')),
+                     data = main_data_snow30_clean, method = "REML", family=binomial(), na.rm=TRUE)
+# modelr <- gam(roedeer ~ s(sun.time, bs='cc') + s(predictions) + s(predictions,sun.time, bs=('cc','tp')),
+#               data = main_data_cross_0_nopred, family = binomial(), method = "REML", na.rm=TRUE)
+
+summary(modelrB_snow30)
+summary(modelrB_snow30)$dev.expl*100
+gam.check(modelrB_snow30)
+beep()
+
+cor.test(main_data_snow30$sun.time, main_data_snow30$predictions_cpglm)
+
+plot(modelrB_snow30, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr_snow30)[1])
+fvisgam(modelrB_snow30, view=c("sun.time", "predictions_cpglm"))
+#########
+
+
+## could do it without the tensor product
+modelr_s <- gam(roedeer ~ s(sun.time, bs='cc') + s(predictions_cpglm) + s(predictions_cpglm,sun.time, bs='tp') +
+                  s(snowdepth.mm) + s(snowdepth.mm, predictions_cpglm, bs='tp'),
+                data = main_data_allsnow, method = "REML", na.rm=TRUE)
+beep()
+summary(modelr_s)
+summary(modelr_s)$dev.expl*100
+
+cor.test(main_data_cross_0_nopred$sun.time, main_data_cross_0_nopred$predictions)
+
+plot(modelr_s, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+fvisgam(modelr_s, view=c("sun.time", "predictions"))
+fvisgam(modelr_s, view=c("snowdepth.mm", "predictions"))
+
+modelh_s <- gam(hare ~ s(sun.time, bs='cc') + s(predictions) + s(predictions,sun.time, bs='tp') + s(snowdepth.mm) + s(snowdepth.mm, predictions),
+                data = main_data_cross_0_nopred, method = "REML", na.rm=TRUE)
+beep()
+summary(modelh_s)
+summary(modelh_s)$dev.expl*100
+
+
+# Plotting with ggplot2 and adding jitter
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$roedeer ==0,])
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$roedeer ==1,])
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$hare ==0,])
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$hare ==1,])
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$lynx ==0,])
+nrow(main_data_cross_0_nopred[main_data_cross_0_nopred$lynx == 1,])
+roedeer_plot <- ggplot(data = main_data_cross_0_nopred, aes(x = predictions, y = roedeer)) +
+  geom_jitter(height = 0.1) +
+  labs(x = "Sinking Depth (cm)",
+       y = "Roe Deer Detection Presence (0,1) per Camera-Day-Hour") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  scale_y_continuous(breaks = c(0, 1))  +
+  geom_vline(xintercept = 2, linetype = "dashed", color = "red")
+roedeer_plot
+
+hare_plot <- ggplot(data = main_data_cross_0_nopred, aes(x = predictions, y = hare)) +
+  geom_jitter(height = 0.1) +
+  labs(x = "Sinking Depth (cm)",
+       y = "Hare Detection Presence (0,1) per Camera-Day-Hour") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  scale_x_continuous(breaks = c(0, 2, 4, 6))
+hare_plot
+
+lynx_plot <- ggplot(data = main_data_cross_0_nopred, aes(x = predictions, y = hare)) +
+  geom_jitter(height = 0.1) +
+  labs(x = "Sinking Depth (cm)",
+       y = "Lynx Detection Presence (0,1) per Camera-Day-Hour") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  scale_x_continuous(breaks = c(0, 2, 4, 6)) +
+  geom_vline(xintercept = 3, linetype = "dashed", color = "red")
+lynx_plot
+
+
+
+
+modelr <- gam(roedeer_binary ~ s(predictions,pred_month, bs = 'tp'), data = dat_cross_0, method = "REML")
+summary(modelr)
+modelr <- gam(roedeer_binary ~ s(sun.time,pred_month, bs = 'tp'), data = dat_cross_0, method = "REML")
+summary(modelr)
+
+raadyr <- dat_cross_0[dat_cross_0['validated_species'] == 'raadyr',]
+plot(raadyr$humandens, raadyr$sun.time)
+plot(raadyr$pred_month, raadyr$sun.time)
+
+modelr <- gam(sun.time ~ s(humandens, k=3), data = raadyr, method = "REML")
+summary(modelr)
+plot(modelr, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+
+modell <- gam(lynx_binary ~ s(predictions,pred_month, bs = 'tp'), data = dat_cross_0, method = "REML")
+modelh <- gam(hare_binary ~ s(predictions,pred_month, bs = 'tp'), data = dat_cross_0, method = "REML")
+### ALL THREE SHOW SIGNIFICANT RELATIONSHIPS
+
+
+
+
+
+summary(modelr)
+plot(modelr, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+fvisgam(modelr, view=c("predictions", "pred_month"))
+
+summary(modelh)
+plot(modelh, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelh)[1])
+fvisgam(modelh, view=c("predictions", "pred_month"))
+
+### same thing but for human density
+modelr <- gam(roedeer_binary ~ s(predictions,humandens, bs = 'tp'), data = dat_cross_0, method = "REML")
+summary(modelr)
+plot(modelr, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(modelr)[1])
+fvisgam(modelr, view=c("predictions", "humandens"))
+## we will need circular response variable (sun.time?)
+
+
+## snow hardness predicting hour of day animals are active
+# model <- gam(sun.time ~ s(predictions,snowdepth.mm, bs = 'tp') + s(humandens) + s(pred_year), data = raadyr, method = "REML")
+# model <- gam(sun.time ~ ti(predictions,snowdepth.mm) + s(humandens) + s(pred_seas), data = raadyr, method = "REML")
+#
+# summary(model)
+
+
+## probability
+## added in predators
+modelr <- gam(roedeer_binary ~ s(sun.time, bs='cc') + s(predictions) + s(snowdepth.mm) +
+                ti(predictions,snowdepth.mm) + s(humandens) + s(pred_year), data = dat_cross_0, method = "REML")
+summary(modelr)
+plot(modelr, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(model)[1])
+
+modelh <- gam(hare_binary ~ s(sun.time, bs='cc') + s(predictions) + s(snowdepth.mm) +
+                ti(predictions,snowdepth.mm) + s(humandens) + s(pred_year), data = dat_cross_0, method = "REML")
+summary(modelh)
+plot(modelh, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(model)[1])
+
+model <- gam(lynx_binary ~ s(sun.time, bs='cc') + s(predictions) + s(snowdepth.mm) +
+               ti(predictions,snowdepth.mm) + s(humandens), data = dat_cross_0, method = "REML")
+summary(model)
+plot(model, pages = 1, scheme = 1, all.terms=TRUE, rug=TRUE, shade=TRUE,
+     shade.col = 'lightblue', seWithMean=TRUE, shift=coef(model)[1])
+
+library(itsadug)
+
+gamtabs(model)
+
+
+fvisgam(modelr, view=c("predictions", "snowdepth.mm"))
+fvisgam(modelh, view=c("predictions", "snowdepth.mm"))
+
+
+fvisgam(model, view=c("predictions", "humandens"))
+fvisgam(model, view=c("predictions", "sun.time"))
+
+
+
+
+
+
+
+
+
