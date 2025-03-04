@@ -17,7 +17,7 @@ There are several coding scripts to support analysis
   - treecanoycover.R: identifies tree canopy for each camera (covariates)
   - find_lag.R: calculates lag from snow hardness model
     
-The data folder contains the following data: 
+The following data folder contains data used in analysis: 
 - fdata_tdata_snowDensity_fromR.csv -- cleaned field data from 2023 field season
 
 The following folder(s) is for reference only: 
