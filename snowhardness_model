@@ -31,6 +31,8 @@ library(ggplot2)
 library(gridExtra)
 # library(purrr)
 
+library(topmodels)
+library(pscl)
 # library(Metrics)
 # library(stringr)
 # library(sf)
@@ -395,7 +397,7 @@ plot(data$temp.diff, data$avgsinkDp)
 plot(data$doy, data$avgsinkDp)
 plot(data$week, data$avgsinkDp)
 
-############## 7.  WEEK AND TEMPERATURE MODELS ###############################
+############## 7. TEMPERATURE MODELS ###############################
 
 model1 <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
                        (cos(sun.time))*season_F*cnpyClass_F +
@@ -413,61 +415,59 @@ summary(top_modelseason)
 AICc(top_modelseason, model1)
 saveRDS(top_modelseason, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelseason.rds')
 
-model1_gaus <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
-                 (cos(sun.time))*season_F*cnpyClass_F +
-                 scale(snowDensity.senorge)*season_F*cnpyClass_F,
-               data = data,  na.action = na.omit)
-summary(model1_gaus)
-calculate_deviance_explained(model1_gaus)
-AICc(model1_gaus, model1)
-plot(model1_gaus$residuals, model1_gaus$fitted.values)
-
-
-model1_densSimp <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
-                 (cos(sun.time))*season_F*cnpyClass_F +
-                 scale(snowDensity.senorge),
+modelhotcold <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                 (cos(sun.time))*hotcold_F*cnpyClass_F +
+                 scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
                data = data,  na.action = na.omit,
                family = Tweedie(p=1.1, link = power(0)))
-summary(model1_densSimp)
-calculate_deviance_explained(model1_densSimp)
-AICc(model1_densSimp)
-AICc(model1, model1_densSimp)
-plot(model1_densSimp$residuals, model1_densSimp$fitted.values)
+summary(modelhotcold)
+saveRDS(modelhotcold, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold.rds')
+calculate_deviance_explained(modelhotcold)
+AICc(modelhotcold)
+plot(modelhotcold$residuals, modelhotcold$fitted.values)
+modelhotcold <- update(modelhotcold, na.action = na.fail)
+dredge_results <- dredge(modelhotcold)
+top_modelhotcold <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhotcold)
+AICc(top_modelhotcold, model1)
+saveRDS(top_modelhotcold, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold.rds')
 
-model1_tempB <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
-                      (cos(sun.time))*hotcold_F*cnpyClass_F +
-                      scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
-                    data = data,  na.action = na.omit,
-                family = Tweedie(p=1.1, link = power(0)))
-summary(model1_tempB)
-saveRDS(model1_tempB, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempB.rds')
-calculate_deviance_explained(model1_tempB)
-AICc(model1_tempB)
-AICc(model1, model1_tempB)
-plot(model1_tempB$residuals, model1_tempB$fitted.values)
-model1_tempB <- update(model1_tempB, na.action = na.fail)
-dredge_results <- dredge(model1_tempB)
-top_modeltempB <- get.models(dredge_results, 1)[[1]]
-summary(top_modeltempB)
-AICc(top_modeltempB, model1)
-saveRDS(top_modeltempB, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempB.rds')
-
-model1_tempBsimp <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+modelhotcold2 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                        (cos(sun.time))*hotcold_F*cnpyClass_F +
                        scale(snowDensity.senorge),
                      data = data,  na.action = na.omit,
                      family = Tweedie(p=1.1, link = power(0)))
-summary(model1_tempBsimp)
-calculate_deviance_explained(model1_tempBsimp)
-AICc(model1_tempBsimp)
-AICc(model1, model1_tempBsimp)
-plot(model1_tempBsimp$residuals, model1_tempBsimp$fitted.values)
-model1_tempBsimp <- update(model1_tempBsimp, na.action = na.fail)
-dredge_results <- dredge(model1_tempBsimp)
-top_modeltempBsimp <- get.models(dredge_results, 1)[[1]]
-summary(top_modeltempBsimp)
-AICc(top_modeltempBsimp, model1)
-saveRDS(top_modeltempBsimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempBsimp.rds')
+summary(modelhotcold2)
+saveRDS(modelhotcold2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2.rds')
+calculate_deviance_explained(modelhotcold2)
+AICc(modelhotcold2)
+plot(modelhotcold2$residuals, modelhotcold2$fitted.values)
+modelhotcold2 <- update(modelhotcold2, na.action = na.fail)
+dredge_results <- dredge(modelhotcold2)
+top_modelhotcold2 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhotcold2)
+AICc(top_modelhotcold2, model1)
+saveRDS(top_modelhotcold2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2.rds')
+
+
+modelhotcold3 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                       (cos(sun.time))*hotcold_F*cnpyClass_F,
+                     data = data,  na.action = na.omit,
+                     family = Tweedie(p=1.1, link = power(0)))
+summary(modelhotcold3)
+saveRDS(modelhotcold3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold3.rds')
+calculate_deviance_explained(modelhotcold3)
+AICc(modelhotcold3)
+plot(modelhotcold3$residuals, modelhotcold3$fitted.values)
+modelhotcold3 <- update(modelhotcold3, na.action = na.fail)
+dredge_results <- dredge(modelhotcold3)
+top_modelhotcold3 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhotcold3)
+AICc(top_modelhotcold3, model1)
+saveRDS(top_modelhotcold3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold3.rds')
+
+
+############### more old models ######################
 
 model1_tempBg <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                        (cos(sun.time))*hotcold_F*cnpyClass_F +
@@ -551,7 +551,7 @@ summary(top_modeltempSimp)
 AICc(top_modeltempSimp, model1)
 saveRDS(top_modeltempSimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempSimp.rds')
 
-
+################### other old models ##############################
 
 model1_week <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(week)*cnpyClass_F +
                       (cos(sun.time))*scale(week)*cnpyClass_F +
@@ -800,8 +800,6 @@ AICc(top_modelweek, model1)
 # [(data$X != 41) | (data$X != 94) | (data$X != 109) ,]
 #install.packages("distributions3")
 #install.packages("topmodels", repos = "https://R-Forge.R-project.org")
-library(topmodels)
-library(pscl)
 data$avgsinkDp_rd <-  round(data$avgsinkDp, 0)
 hist(data$avgsinkDp_rd)
 
@@ -846,7 +844,6 @@ calculate_mcfadden <- function(model) {
 }
 
 calculate_mcfadden(mod.hurdle2)
-calculate_mcfadden(mod.hurdle3)
 
 mod.hurdle <- update(mod.hurdle, na.action= na.fail)
 dredge_results <- dredge(mod.hurdle)
@@ -856,8 +853,8 @@ calculate_mcfadden(top_modelhurdle)
 AICc(top_modelhurdle, model1)
 saveRDS(top_modelhurdle, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds')
 
-mod.hurdle2 <- update(mod.hurdle2, na.action= na.fail)
 saveRDS(mod.hurdle2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhurdle2.rds')
+mod.hurdle2 <- update(mod.hurdle2, na.action= na.fail)
 dredge_results <- dredge(mod.hurdle2)
 top_modelhurdle2 <- get.models(dredge_results, 1)[[1]]
 summary(top_modelhurdle2)
@@ -885,7 +882,7 @@ summary(top_modelhurdle3)
 calculate_mcfadden(top_modelhurdle3)
 AICc(top_modelhurdle3, model1)
 saveRDS(top_modelhurdle3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle3.rds')
-
+#
 mod.hurdle4 <- hurdle((avgsinkDp_rd) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                         (cos(sun.time))*hotcold_F*cnpyClass_F + scale(snowDensity.senorge), data = data, dist = "poisson",
                       zero.dist = "binomial")
@@ -1408,16 +1405,19 @@ saveRDS(model_GLM_TEMP, '/Users/catherinebreen/Dropbox/Chapter3/models/model_GLM
 
 
 ############## 11. PREDICT AND VISUALIZE #########
-
 # best models #
-
+top_modelhurdle3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle3.rds')
 AICc(model1,
      top_modelseason,
      model1_tempB,
      top_modeltempB,
      model1_tempBsimp,
-     #top_modeltempBg,
-     top_modeltempBsimp) #,
+     top_modeltempBsimp,
+     mod.hurdle2,
+     top_modelhurdle3,
+     mod.hurdle3,
+     )
+    # top_modelhurdle2) #,
      #top_modeltemp,
     # top_modeltempSimp,
      #top_modelweektemp1,
@@ -1426,6 +1426,11 @@ AICc(model1,
     # top_modelweektemp4,
    #  top_modelhurdle,
    #  mod.hurdle3)
+
+
+model <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle4.rds')
+model <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle3.rds')
+model <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle2.rds')
 
 # Create a sequence of sun.time values for prediction
 sun_time_seq <- seq(0, 2*pi, length.out = 1000)
@@ -1459,7 +1464,9 @@ pred_data <- expand.grid(
 # /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelseason.rds
 # /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds
 
-model <- top_modeltempB #model1_tempB
+model <- model
+  #top_modeltempBsimp #mod.hurdle3 #top_modelhurdle3 #top_modeltempB #mod.hurdle2 #top_modelhurdle2 #top_modeltempB #model1_tempB
+#mod.hurdle3 #top_modelhurdle3
   #mod.hurdle4
   #model_temp_binarySimp
   #top_modelhurdle4
@@ -1483,7 +1490,7 @@ pred_data$se <- predict(model, newdata = pred_data[1,], type = "response", se.fi
 head(pred_data)
 
 ## if hurdle:
-#pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)
+pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)
 
 
 
@@ -1499,7 +1506,7 @@ tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
 
 ############## SEASON MODEL PLOT ##############
 earlyseason_plot <- ggplot(data = pred_data[(pred_data$season_F == 'early'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  #geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   #geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
   geom_line() +
   geom_point(
@@ -1524,7 +1531,7 @@ earlyseason_plot <- ggplot(data = pred_data[(pred_data$season_F == 'early'), ], 
 earlyseason_plot
 
 lateseason_plot <- ggplot(data = pred_data[(pred_data$season_F == 'late'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+ # geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
   geom_point(
     data = data[data$season_F == 'late',], #$season_F == 'early',],
@@ -1604,8 +1611,8 @@ grid.arrange(earlyseason_plot, lateseason_plot, ncol=2)
 
 
 ############## BINARY TEMP MODEL PLOT ###############
-colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) + geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
-  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+  #geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   geom_line(size = 2) +
   geom_point(
     data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
@@ -1628,8 +1635,8 @@ colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], ae
 
 colddays_plot
 
-warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) + geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
-  # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+ # geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   geom_line(size = 2) +
   geom_point(
     data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
@@ -1660,7 +1667,7 @@ grid.arrange(colddays_plot, warmdays_plot, ncol=2)
 
 ############## BINARY TEMP MODEL PLOT GAUSSIAN ###############
 colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  #geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
   geom_point(
     data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
@@ -2062,7 +2069,7 @@ grid.arrange(colddays_plot, warmdays_plot, ncol=2)
 
 colddays_plot <- ggplot(data = pred_data[(pred_data$avg.temp.c < 0), ], aes(x = sun.time, y = predicted_hardness,
                                                                             linetype = factor(week), color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+ # geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
   geom_line() +
   geom_point(
@@ -2341,7 +2348,7 @@ grid.arrange(early_season_plot, late_season_plot, c2, d2, ncol = 2)
 ###############################
 
 
-
+hist(data$snowDensity.senorge)
 
 
 
