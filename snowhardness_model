@@ -1,6 +1,6 @@
 #* Catherine Breen
 #* for Oikos submission
-
+#* Part 1
 
 ####### 0. LOAD PACKAGES ############ ##########
 
@@ -361,7 +361,7 @@ data$cnpyClass_F <- ifelse(data$cnpyClass == 1, 'closed', 'open')
 data$season_F <- as.factor(data$season)
 data$hotcold_F <- as.factor(data$hotcold)
 data$cloudy_F <- as.factor(data$cloudy)
-data$season_F <- ifelse(data_na.omit$season_F == 0, "early", "late")
+data$season_F <- ifelse(data$season_F == 0, "early", "late")
 
 table(data$cloudy_F)
 table(data$hotcold_F)
@@ -440,6 +440,7 @@ model1_tempB <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                     data = data,  na.action = na.omit,
                 family = Tweedie(p=1.1, link = power(0)))
 summary(model1_tempB)
+saveRDS(model1_tempB, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempB.rds')
 calculate_deviance_explained(model1_tempB)
 AICc(model1_tempB)
 AICc(model1, model1_tempB)
@@ -471,18 +472,50 @@ saveRDS(top_modeltempBsimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/to
 model1_tempBg <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                        (cos(sun.time))*hotcold_F*cnpyClass_F +
                        scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
-                     data = data,  na.action = na.omit)
+                     data = data,  na.action = na.omit,
+                     family = Tweedie(p=1.1, link = power(0)))
+
+model1_tempBg_glm <-  glm((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                        (cos(sun.time))*hotcold_F*cnpyClass_F +
+                        scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
+                      data = data,  na.action = na.omit,
+                      family =tweedie(var.power=1.1,link.power=0))
+
+model1_tempBg_nodens_glm <-  glm((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                            (cos(sun.time))*hotcold_F*cnpyClass_F,
+                          data = data,  na.action = na.omit,
+                          family =tweedie(var.power=1.1,link.power=0))
+
+model1_tempBg_cpglm <-  cpglm((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                            (cos(sun.time))*hotcold_F*cnpyClass_F +
+                            scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
+                          data = data,  na.action = na.omit,
+                          family =tweedie(var.power=1.1,link.power=0))
+
+calculate_deviance_explained(model1_tempBg_nodens_glm)
+
+plot(model1_tempBg, which = 4)
 summary(model1_tempBg)
 calculate_deviance_explained(model1_tempBg)
 AICc(model1_tempBg)
 AICc(model1, model1_tempBg)
+plot(model1_tempBg$residuals)
 plot(model1_tempBg$residuals, model1_tempBg$fitted.values)
 model1_tempBg <- update(model1_tempBg, na.action = na.fail)
 dredge_results <- dredge(model1_tempBg)
 top_modeltempBg <- get.models(dredge_results, 1)[[1]]
 summary(top_modeltempBg)
 AICc(top_modeltempBg, model1)
+plot(residuals(top_modeltempBg))
 saveRDS(top_modeltempBg, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modeltempBg.rds')
+
+
+saveRDS(model1_tempBg, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempBg.rds')
+saveRDS(model1_tempBg_glm, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempBg_glm.rds')
+saveRDS(model1_tempBg_nodens_glm, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempBg_nodens_glm.rds')
+saveRDS(model1_tempBg_cpglm, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model1_tempBg_cpglm.rds')
+
+
 
 model1_temp <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c)*cnpyClass_F +
                   (cos(sun.time))*scale(avg.temp.c)*cnpyClass_F +
@@ -608,6 +641,36 @@ summary(top_modelweektemp4)
 AICc(top_modelweektemp4, model1)
 saveRDS(top_modelweektemp4, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelweektemp4.rds')
 
+model_temp_binary <-  glm((avgsinkDp) ~ (sin(sun.time))*cnpyClass_F*hotcold_F +
+                            (cos(sun.time))*cnpyClass_F*hotcold_F +
+                            scale(snowDensity.senorge)*hotcold_F*cnpyClass_F,
+                          data = data,
+                          family = tweedie(var.power=1.1,link.power=0))
+summary(model_temp_binary)
+calculate_deviance_explained(model_temp_binary)
+plot(residuals(model_temp_binary))
+saveRDS(model_temp_binary, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model_temp_binary.rds')
+
+model_temp_binarySimp <-  glm((avgsinkDp) ~ (sin(sun.time))*cnpyClass_F*hotcold_F +
+                            (cos(sun.time))*cnpyClass_F*hotcold_F +
+                            scale(snowDensity.senorge),
+                          data = data,
+model_temp_binarySimpfamily = tweedie(var.power=1.1,link.power=0))
+summary(model_temp_binarySimp)
+calculate_deviance_explained(model_temp_binarySimp)
+plot(residuals(model_temp_binarySimp))
+saveRDS(model_temp_binarySimp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model_temp_binarySimp.rds')
+
+model_season_TEST <-  glm((avgsinkDp) ~ (sin(sun.time))*cnpyClass_F*season_F +
+                            (cos(sun.time))*cnpyClass_F*season_F +
+                            scale(snowDensity.senorge)*season_F*cnpyClass_F,
+                          data = data,
+                          family = tweedie(var.power=1.1,link.power=0))
+summary(model_season_TEST)
+calculate_deviance_explained(model_season_TEST)
+plot(residuals(model_season_TEST))
+saveRDS(model_season_TEST, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model_season_TEST.rds')
+
 
 AICc(top_modelseason,
      top_modeltemp,
@@ -616,6 +679,11 @@ AICc(top_modelseason,
      top_modelweektemp2,
      top_modelweektemp3)
 
+
+plot(model_temp_binary, which = 4)
+plot(model_season_test, which = 4)
+
+data_test[c(250, 233, 225), ]
 
 ###################################### OLD MODELS ########################
 model1w <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c.prev)*cnpyClass_F +
@@ -726,6 +794,8 @@ top_modeltemp <- get.models(dredge_results, 1)[[1]]
 summary(top_modelweek)
 AICc(top_modelweek, model1)
 
+
+
 ############### 8. HURDLE MODEL #########
 # [(data$X != 41) | (data$X != 94) | (data$X != 109) ,]
 #install.packages("distributions3")
@@ -750,6 +820,22 @@ outlier_index <- which(abs(residuals_model) > 3)
 outlier_data <- data[outlier_index, ]
 print(outlier_data)
 
+
+mod.hurdle2 <- hurdle((avgsinkDp_rd) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                       (cos(sun.time))*hotcold_F*cnpyClass_F +
+                       scale(snowDensity.senorge)*hotcold_F*cnpyClass_F, data = data, dist = "poisson",
+                     zero.dist = "binomial")
+AICc(model1, mod.hurdle2)
+summary(mod.hurdle2)
+rootogram(mod.hurdle2, xlim = c(0,12), confint = FALSE, plot = "base")
+plot(residuals(mod.hurdle2))
+residuals_model <- residuals(mod.hurdle2)
+outlier_index <- which(abs(residuals_model) > 3)
+# View the row(s) with the outlier
+outlier_data <- data[outlier_index, ]
+print(outlier_data)
+
+
 ##
 calculate_mcfadden <- function(model) {
   null_model <- glm(avgsinkDp_rd ~ 1, family = poisson(), data = data)  # Null model with intercept only
@@ -759,7 +845,8 @@ calculate_mcfadden <- function(model) {
   print(mcfadden_r2)
 }
 
-calculate_mcfadden(mod.hurdle)
+calculate_mcfadden(mod.hurdle2)
+calculate_mcfadden(mod.hurdle3)
 
 mod.hurdle <- update(mod.hurdle, na.action= na.fail)
 dredge_results <- dredge(mod.hurdle)
@@ -768,6 +855,57 @@ summary(top_modelhurdle)
 calculate_mcfadden(top_modelhurdle)
 AICc(top_modelhurdle, model1)
 saveRDS(top_modelhurdle, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds')
+
+mod.hurdle2 <- update(mod.hurdle2, na.action= na.fail)
+saveRDS(mod.hurdle2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhurdle2.rds')
+dredge_results <- dredge(mod.hurdle2)
+top_modelhurdle2 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhurdle2)
+calculate_mcfadden(top_modelhurdle2)
+AICc(top_modelhurdle2, model1)
+saveRDS(top_modelhurdle2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle2.rds')
+
+mod.hurdle3 <- hurdle((avgsinkDp_rd) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                        (cos(sun.time))*hotcold_F*cnpyClass_F , data = data, dist = "poisson",
+                      zero.dist = "binomial")
+AICc(model1, mod.hurdle3)
+summary(mod.hurdle3)
+rootogram(mod.hurdle3, xlim = c(0,12), confint = FALSE, plot = "base")
+plot(residuals(mod.hurdle3))
+residuals_model <- residuals(mod.hurdle3)
+outlier_index <- which(abs(residuals_model) > 3)
+# View the row(s) with the outlier
+outlier_data <- data[outlier_index, ]
+print(outlier_data)
+saveRDS(mod.hurdle3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/mod.hurdle3.rds')
+mod.hurdle3 <- update(mod.hurdle3, na.action= na.fail)
+dredge_results <- dredge(mod.hurdle3)
+top_modelhurdle3 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhurdle3)
+calculate_mcfadden(top_modelhurdle3)
+AICc(top_modelhurdle3, model1)
+saveRDS(top_modelhurdle3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle3.rds')
+
+mod.hurdle4 <- hurdle((avgsinkDp_rd) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
+                        (cos(sun.time))*hotcold_F*cnpyClass_F + scale(snowDensity.senorge), data = data, dist = "poisson",
+                      zero.dist = "binomial")
+AICc(model1, mod.hurdle3, mod.hurdle4)
+summary(mod.hurdle4)
+rootogram(mod.hurdle4, xlim = c(0,12), confint = FALSE, plot = "base")
+plot(residuals(mod.hurdle4))
+residuals_model <- residuals(mod.hurdle4)
+outlier_index <- which(abs(residuals_model) > 3)
+# View the row(s) with the outlier
+outlier_data <- data[outlier_index, ]
+print(outlier_data)
+saveRDS(mod.hurdle4, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/mod.hurdle4.rds')
+mod.hurdle4 <- update(mod.hurdle4, na.action= na.fail)
+dredge_results <- dredge(mod.hurdle4)
+top_modelhurdle4 <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhurdle4)
+calculate_mcfadden(top_modelhurdle4)
+AICc(top_modelhurdle4, mod.hurdle3, model1)
+saveRDS(top_modelhurdle4, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle4.rds')
 
 
 
@@ -1275,17 +1413,19 @@ saveRDS(model_GLM_TEMP, '/Users/catherinebreen/Dropbox/Chapter3/models/model_GLM
 
 AICc(model1,
      top_modelseason,
+     model1_tempB,
      top_modeltempB,
-     top_modeltempBg,
-     top_modeltempBsimp,
-     top_modeltemp,
-     top_modeltempSimp,
-     top_modelweek,
-     top_modelweektemp1,
-     top_modelweektemp2,
-     top_modelweektemp3,
-     top_modelweektemp4,
-     top_modelhurdle)
+     model1_tempBsimp,
+     #top_modeltempBg,
+     top_modeltempBsimp) #,
+     #top_modeltemp,
+    # top_modeltempSimp,
+     #top_modelweektemp1,
+    # top_modelweektemp2,
+    # top_modelweektemp3,
+    # top_modelweektemp4,
+   #  top_modelhurdle,
+   #  mod.hurdle3)
 
 # Create a sequence of sun.time values for prediction
 sun_time_seq <- seq(0, 2*pi, length.out = 1000)
@@ -1319,7 +1459,13 @@ pred_data <- expand.grid(
 # /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelseason.rds
 # /Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhurdle.rds
 
-model <- top_modeltempSimp #top_modeltempBsimp
+model <- top_modeltempB #model1_tempB
+  #mod.hurdle4
+  #model_temp_binarySimp
+  #top_modelhurdle4
+  #top_modelhurdle3
+  #mod.hurdle3
+  #top_modeltempSimp #top_modeltempBsimp
   #top_modeltempSimp
   #top_modelweektemp4
   #top_modelweek
@@ -1328,6 +1474,8 @@ model <- top_modeltempSimp #top_modeltempBsimp
   #top_modeltempBg #top_modelweektemp2 #top_modeltemp
 
 #top_model_tempdiff #model5 #model_gamGLM_LATTEMP #best_model1gam_F #model_gamGLM_LATTEMP
+
+
 
 pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)$fit
 #pred_data$predicted_hardness <- predict(best_model4, newdata = pred_data, type = "response", se.fit = TRUE)$fit
@@ -1456,9 +1604,9 @@ grid.arrange(earlyseason_plot, lateseason_plot, ncol=2)
 
 
 ############## BINARY TEMP MODEL PLOT ###############
-colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) + geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line(size = 2) +
   geom_point(
     data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
@@ -1466,7 +1614,7 @@ colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], ae
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
   geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
   geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
-  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
   scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
   theme_minimal() + theme(legend.position = 'none',
                           axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
@@ -1480,9 +1628,9 @@ colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], ae
 
 colddays_plot
 
-warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
-  geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) + geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   # geom_ribbon(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), alpha = 0.5, fill='grey', color = 'grey') +
+  geom_line(size = 2) +
   geom_point(
     data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
@@ -1490,13 +1638,15 @@ warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
   geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
   geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
-  scale_color_manual(values = c("darkblue", "darkgreen"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
   scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
   theme_minimal() + theme(legend.position = 'none',
                           axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
                           axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
-                          axis.text.y = element_text(size =16, color = 'black'),
-                          axis.title.y = element_text(size = 16, color = 'black'),
+                          # axis.text.y = element_text(size =16, color = 'black'),
+                          axis.text.y = element_blank(),
+                          # axis.title.y = element_text(size = 16, color = 'black'),
+                          axis.title.y = element_blank(),
                           plot.title = element_text(size = 20),         # Increase plot title text size
                           plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
   ) + geom_line(size = 1) +
