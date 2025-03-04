@@ -515,7 +515,7 @@ data_wsnowtree_week <- data_wsnowtree %>%
     swe = mean(swe, na.rm = TRUE),
     snowDensity.senorge = mean(snowDensity.senorge, na.rm = TRUE),
     avg.temp = mean(avg.temp, na.rm = TRUE),
-    hotcold_F = mode(hotcold_F, na.rm = TRUE),
+    hotcold_F = mode(hotcold_F),
     prev_day_temp = mean(prev_day_temp, na.rm = TRUE),
     treeloss = mean(treeloss, na.rm = TRUE),
     treecover = mean(treecover, na.rm = TRUE),
