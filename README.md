@@ -8,9 +8,18 @@ This repository supports the analysis for the paper in prep, "Diel and seasonal 
 # Code availability
   
 There are several coding scripts to support analysis 
-- snowhardness_model.R: cleans field data and derives snow hardness linear model
-- scandcam_detections.R: cleans wildlife detections and identifies hourly detections for each camera for study period
-- scandcam_predictions.R: combines scandcam detections and snowhardness model & models detections with GAM
-- overlapPlots.R: Identifies overlap depending on different snow hardness conditions
-- covariate scripts
+- 0_snowhardness_model.R: cleans field data and derives snow hardness linear model
+- 1_scandcam_predictions.R: predicts snowhardness values at scandcam detections
+- 2_overlapPlots.R: Identifies overlap depending on different snow hardness conditions
+- 3_scandcam_pres_ab.R: converts scandcam detections to pres/abs framework for GAM modeling
+- 4_gam_predictions.R: uses GAM models to predict hourly frequency of animals in relation to snow hardness
+- utility scripts folder:
   - treecanoycover.R: identifies tree canopy for each camera (covariates)
+  - find_lag.R: calculates lag from snow hardness model
+    
+The data folder contains the following data: 
+- fdata_tdata_snowDensity_fromR.csv -- cleaned field data from 2023 field season
+
+The following folder(s) is for reference only: 
+- old_scripts: former scripts using during initial stages of analysis (for reference only)
+  
