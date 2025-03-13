@@ -20,57 +20,66 @@ library(stringr)
 library(sf)
 library(sf)
 library(sp)
-
 library(cowplot)
+library(circular)
+
 ##########################################################
 ###################### OVERLAP ANALYSIS #################
 ##########################################################
 
-# data1 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpredUPD2.RDS')
-# data1 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpredUPD2_AIC.RDS')
+#data0 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/scandcam_obs_forGAM_wpredUPD2.RDS')
+data0 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/scandcam_obs_forGAM_wpredUPD2_AIC.RDS')
+data0 <- data0[c("location_id", "captured_at", "validated_species", "num_animals", "datetime", "Latitude", "Longitude",
+                 "LatitudeNum","LongitudeNum", 'season',"date","month","year","hour","snowdepth.mm","swe",'density','avg.temp','cross_0','sun.time',
+                 "treecover","treeloss",'cnpyClass','roedeer_binary','hare_binary')]
+
+data0 <- data0 %>%
+  mutate(snowDensity.senorge = density,
+         cnpyClass_F = as.factor(cnpyClass),
+         cnpyClass_F = ifelse(cnpyClass_F == 1, 'closed', 'open'),
+         avg.temp.c = avg.temp,
+         hotcold_F = as.factor(ifelse(avg.temp.c >= 0, 'warm', 'cold')),
+         snowdepth.cm = snowdepth.mm
+  )
+
+
+modelhotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2.rds')
+top_modelhotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2.rds')
+data0$top_modelhotcold2 <- predict(top_modelhotcold2, newdata = data0, type = 'response', se.fit = TRUE)$fit #stats::
+
+####################
+### old code (to delete) ################
 #data1 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_feb25.RDS')
-data1 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar3.RDS')
+# data1 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar3.RDS')
+#
+# mismatched_rows <- anti_join(data0, data1, by = c("location_id", "captured_at", "validated_species",
+#                                                   "num_animals", "datetime", "Latitude", "Longitude",
+#                                                   'treecover','treeloss','swe','cross_0'))
+#
+# print(mismatched_rows)
+# hist(data0$sun.time)
+# hist(data1$sun.time)
+#
+# data2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar12b.RDS')
+# data3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar12.RDS')
+# data4 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar13.RDS')
+##############
 
-data <- data1 #data1[data1['cross_0'] ==1,]
+table(data0$validated_species == 'hare')
+table(data1$validated_species == 'hare')
+table(data0$validated_species == 'raadyr')
+table(data1$validated_species == 'raadyr')
 
-table(data$validated_species == 'hare')
-table(data$validated_species == 'raadyr')
+data <- data0 #data0 #data1 #[data1['cross_0'] ==1,]
+
 
 
 ### overlap
-roe_deer <- data %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 0, pred_month == 0, humandens < 40)
+roe_deer_simp1 <- data %>%
+  filter(validated_species == "raadyr", snowdepth.cm > 10, cross_0 == 0) # snowdepth.mm < 150  ) # snowdepth.mm > 1)
 
-hare <- data %>%
-  filter(validated_species == "hare", snowdepth.mm > 30, pred_month == 0, humandens < 40)
-
-
-roe_deer_simp1 <- data1 %>%
-  filter(validated_species == "raadyr") # snowdepth.mm > 1)
-densityPlot(roe_deer_simp1$sun.time)
-nrow(roe_deer_simp1)
-
-roe_deer_simp <- data1 %>%
-  filter(validated_species == "raadyr", cross_0 == 1) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp$sun.time)
-nrow(roe_deer_simp)
-
-roe_deer_simp <- data1 %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 10) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp$sun.time)
-nrow(roe_deer_simp)
-
-par(mfrow=c(1,1))
-roe_deer_simp1 <- data1 %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 10, cross_0 == 0) # snowdepth.mm < 150  ) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp2$sun.time)
-nrow(roe_deer_simp1)
-
-par(mfrow=c(1,1))
-roe_deer_simp2 <- data1 %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 10, cross_0 == 1) #snowdepth.mm < 150 ) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp2$sun.time)
-nrow(roe_deer_simp2)
+roe_deer_simp2 <- data %>%
+  filter(validated_species == "raadyr", snowdepth.cm > 10, cross_0 == 1) #snowdepth.mm < 150 ) # snowdepth.mm > 1)
 
 # Combine the two datasets and add a condition column
 roe_deer_combined <- bind_rows(
@@ -107,7 +116,6 @@ roedeer1 <- ggplot(roe_deer_combined, aes(x = sun.time, color = condition)) +
   geom_rug(aes(x = sun.time), sides = "b", alpha = 0.10)#+
   #eom_smooth(data= roe_deer_simp, aes(x = sun.time, y = predictionsAIC/20), linetype='dashed', se = FALSE, inherit.aes = FALSE)
 
-library(circular)
 sample1 <- circular(roe_deer_simp1$sun.time)
 sample2 <- circular(roe_deer_simp2$sun.time)
 result <- watson.wheeler.test(list(sample1, sample2))
@@ -116,21 +124,14 @@ t0 <- overlapEst(roe_deer_simp1$sun.time, roe_deer_simp2$sun.time,
                  type="Dhat1")
 
 bt <- overlap::bootstrap(roe_deer_simp1$sun.time, roe_deer_simp2$sun.time, nb = 1000)
-bootCI(t0,bt,conf=0.95)
+bootCI(t0, bt, conf=0.95)
 
+############# hare ###################
+hare_simp1 <- data %>%
+  filter(validated_species == "hare", snowdepth.cm < 10, cross_0 == 0)
 
-par(mfrow=c(1,1))
-hare_simp1 <- data1 %>%
-  filter(validated_species == "hare", snowdepth.mm < 10, cross_0 < 1) # snowdepth.mm < 150 ) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp2$sun.time)
-nrow(hare_simp1)
-
-par(mfrow=c(1,1))
-hare_simp2 <- data1 %>%
-  filter(validated_species == "hare", snowdepth.mm > 10, cross_0 == 1)  #snowdepth.mm < 150 ) # snowdepth.mm > 1)
-densityPlot(roe_deer_simp2$sun.time)
-nrow(hare_simp2)
-
+hare_simp2 <- data %>%
+  filter(validated_species == "hare", snowdepth.cm > 10, cross_0 == 1)
 
 hare_combined <- bind_rows(
   hare_simp1 %>% mutate(condition = "Non-FT Day"),
@@ -175,21 +176,12 @@ grid.arrange(roedeer1, hare1, ncol=2)
 sample1 <- circular(hare_simp1$sun.time)
 sample2 <- circular(hare_simp2$sun.time)
 result <- watson.wheeler.test(list(sample1, sample2))
-#wilcox.test(roe_deer_simp1$sun.time, roe_deer_simp2$sun.time, paired = TRUE)
 
 t0 <- overlapEst(hare_simp1$sun.time, hare_simp2$sun.time,
                  type="Dhat1")
 
 bt <- overlap::bootstrap(hare_simp1$sun.time, hare_simp2$sun.time, nb = 1000)
 bootCI(t0,bt,conf=0.95)
-
-
-### average
-densityPlot(roe_deer$sun.time)
-nrow(roe_deer)
-
-
-
 
 
 #### sensitivity analysis for thresholds
@@ -229,15 +221,18 @@ nrow(roe_deer)
 # Compute kernel density estimate
 
 roe_deer_es <- data %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 10, hotcold_F =='minus' )
+  filter(validated_species == "raadyr", snowdepth.cm > 10,  cross_0 == 1, hotcold_F =='cold' )
 roe_deer_ls <- data %>%
-  filter(validated_species == "raadyr", snowdepth.mm > 10, hotcold_F =='plus')
+  filter(validated_species == "raadyr", snowdepth.cm > 10,  cross_0 == 1, hotcold_F =='warm')
 
 ## sample sizes
+test <- data %>%
+  filter(validated_species == "hare",snowdepth.cm > 10)
+
 hare_es <- data %>%
-  filter(validated_species == "hare", snowdepth.mm > 10, hotcold_F =='minus' )
+  filter(validated_species == "hare", snowdepth.cm > 10, cross_0 == 1, hotcold_F == 'cold') #hotcold_F == 'cold')#hotcold_F =='minus' )
 hare_ls <- data %>%
-  filter(validated_species == "hare", snowdepth.mm > 10, hotcold_F =='plus')
+  filter(validated_species == "hare", snowdepth.cm > 10, cross_0 == 1, hotcold_F == 'warm') #hotcold_F == 'warm') #hotcold_F =='plus')
 
 
 sample1 <- circular(roe_deer_es$sun.time)
@@ -261,7 +256,7 @@ roe_deer <- data %>%
   filter(validated_species == "raadyr", snowdepth.mm > 10, cross_0 ==1) #snowdepth.mm > 30, pred_month == 0, humandens < 40)
 nrow(roe_deer)
 hare <- data %>%
-  filter(validated_species == "hare", snowdepth.mm > 10, cross_0 ==1) #snowdepth.mm > 30, pred_month == 0, humandens < 40)
+  filter(validated_species == "hare", snowdepth.mm > 10, cross_0 == 1) #snowdepth.mm > 30, pred_month == 0, humandens < 40)
 nrow(hare)
 
 #predictionsAIC
