@@ -49,7 +49,7 @@ calculate_mcfadden <- function(model) {
 ############## 1. LOAD DATA AND FUNCTIONS #########
 
 ## field data, snow data, temperature data
-fdata <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/fdata_tdata_snowDensity_fromR2.csv')
+fdata <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/fdata_tdata_snowDensity_fromR2.csv') #2 #3
 senorge <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/senorge_outputs_Jan1_May17-23.csv')
 senorge_temp <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/minmaxavg_temp_senorge.csv')
 
@@ -59,12 +59,17 @@ senorge_temp2 <- senorge_temp %>%
   arrange(loc, date1) %>%  # Ensure data is sorted
   group_by(loc) %>%  # Group by location
   mutate(avg.temp.c.prev = lag(avg.temp.c),
+         avg.temp.c.prev1 = slide_mean(avg.temp.c, before = 1, after = 0, complete = TRUE),
          avg.temp.c.prev3 = slide_mean(avg.temp.c, before = 3, after = -1, complete = TRUE),
          avg.temp.c.prev2 = slide_mean(avg.temp.c, before = 2, after = -1, complete = TRUE)) %>%
   ungroup()  %>%
-  select(X, avg.temp.c.prev, avg.temp.c.prev3, avg.temp.c.prev2)
+  select(X, avg.temp.c.prev, avg.temp.c.prev1, avg.temp.c.prev3, avg.temp.c.prev2)
 
+head(senorge_temp2)
 senorge_temp <- left_join(senorge_temp, senorge_temp2, by = 'X')
+remove(senorge_temp2)
+
+head(senorge_temp)
 
 fdata$Date <- as.character(as.Date(fdata$Date, format = "%m/%d/%y"))
 fdata$Hour <- as.character(fdata$Hour)
@@ -121,10 +126,13 @@ head(senorge)
 colnames(senorge_temp)[2] <- 'Latitude'
 colnames(senorge_temp)[5] <- 'Date'
 senorge_temp <- senorge_temp[,c('Latitude','Date', 'max.temp.c','min.temp.c','temp.diff','avg.temp.c',
-                                'avg.temp.c.prev','avg.temp.c.prev3','avg.temp.c.prev2', 'cross_0')]
+                                'avg.temp.c.prev','avg.temp.c.prev1','avg.temp.c.prev3','avg.temp.c.prev2', 'cross_0')]
 head(senorge_temp)
+unique(senorge_temp$avg.temp.c.prev)
+unique(senorge_temp$avg.temp.c)
 
 data <- dplyr::left_join(fdata, senorge, by = c('Latitude','Date'), relationship="many-to-many")
+
 data <-dplyr::left_join(data, senorge_temp, by = c('Latitude','Date'), relationship="many-to-many")
 
 ## categorical data columns ##
@@ -133,6 +141,7 @@ data$season <- ifelse(data$Month <= 3, 0, 1)
 data$hotcold <- ifelse(data$avg.temp.c >= 0, 'plus', 'minus')
 data$hotcold3 <- ifelse(data$avg.temp.c.prev3 >= 0, 'plus', 'minus')
 data$hotcold2 <- ifelse(data$avg.temp.c.prev2 >= 0, 'plus', 'minus')
+data$hotcold1 <- ifelse(data$avg.temp.c.prev1 >= 0, 'plus', 'minus')
 data$doy <- yday(data$Date)
 data$cloudy <- ifelse(data$CldCvr >= 50, 'cloudy','sunny')
 
@@ -150,6 +159,7 @@ data$timeZone <- lutz::tz_lookup_coords(lat=data$Latitude,
 # Function to concatenate two strings
 concatenate_strings <- function(date, time) {
   return(paste(date, time))}
+
 # Using mapply to apply the function to each corresponding pair of elements
 data$datetime <- mapply(concatenate_strings, data$Date, data$Time)
 
@@ -204,8 +214,9 @@ plot1a + facet_wrap(~cloudy)
 
 
 table(data$hotcold) ## most even breakdown
-table(data$hotcold2)
-table(data$hotcold3)
+table(data$hotcold1) ## overfit
+table(data$hotcold2) # overfit
+table(data$hotcold3) # overfit
 table(data$season)
 table(data$cloudy)
 table(data$week)
@@ -250,6 +261,8 @@ print(stats)
 
 data_var_only <- na.omit(data[c('sun.time','CnpyCvr','snowDensity.senorge','Latitude', 'season', 'avg.temp.c.prev',
                                 'avg.temp.c.prev3','avg.temp.c.prev2','avg.temp.c','temp.diff', 'doy','week', 'CldCvr')])
+
+data_var_only2 <- na.omit(data[c('sun.time','CnpyCvr','snowDensity.senorge','avg.temp.c')])
 ## should be equal
 nrow(data_var_only) == nrow(data) # TRUE!
 data_var_only <- as.data.frame(scale(data_var_only))
@@ -257,8 +270,13 @@ colnames(data_var_only) <- c('sun time', 'canopy cover',
                              'modeled density','Latitude','season','prev.avg.temp',
                              'prev3.avg.temp','prev2.avg.temp','avg.temp.c','temp.diff','doy','week','cldcvr')
 
+nrow(data_var_only2) == nrow(data) # TRUE!
+data_var_only2 <- as.data.frame(scale(data_var_only2))
+colnames(data_var_only2) <- c('sun time', 'canopy cover',
+                             'modeled density','avg.temp.c')
+
 ### Supp figure 1
-corrplot::corrplot(cor(data_var_only), tl.col = "black", method = "color",
+corrplot::corrplot(cor(data_var_only2), tl.col = "black", method = "color",
          outline = T,
          addCoef.col = "black", number.digits = 2, type = 'lower', tl.srt = 45,  # Rotate the labels by 45 degrees
          cl.pos = 'b',
@@ -303,61 +321,75 @@ ggplot(truncated_dat, aes(x = avgsinkDp)) +
 
 
 ############## 5. UNIVARIATE MODELS #####################
-univariate_model<- glm((avgsinkDp) ~ cnpyClass, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+library(statmod) # or library(tweedie)
+library(tweedie)
+univariate_model<- cpglm((avgsinkDp) ~ cnpyClass, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.32
 
-univariate_model<- glm((avgsinkDp) ~ CnpyCvr, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ CnpyCvr, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.22
 
-univariate_model<- glm((avgsinkDp) ~ AirTemp, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ AirTemp, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.22
 
-univariate_model<- glm((avgsinkDp) ~ cam_tempS, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ cam_tempS, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.01
 
-univariate_model<- glm((avgsinkDp) ~ cam_tempN, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ cam_tempN, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.002
 
-univariate_model<- glm((avgsinkDp) ~ avg.temp.c, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
-summary(univariate_model)
-calculate_deviance_explained(univariate_model) ## 0.07
-
-univariate_model<- glm((avgsinkDp) ~ avg.temp.c.prev, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ avg.temp.c, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.06
 
-univariate_model<- glm((avgsinkDp) ~ season, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ avg.temp.c.prev, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
-calculate_deviance_explained(univariate_model) ## 0.12
+calculate_deviance_explained(univariate_model) ## 0.05
 
-univariate_model<- glm((avgsinkDp) ~ doy, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
-summary(univariate_model)
-calculate_deviance_explained(univariate_model) ## 0.032
-
-univariate_model<- glm((avgsinkDp) ~ week, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
-summary(univariate_model)
-calculate_deviance_explained(univariate_model) ## 0.028
-
-univariate_model<- glm((avgsinkDp) ~ avg.temp.c.prev3, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ avg.temp.c.prev2, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.08
 
-univariate_model<- glm((avgsinkDp) ~ avg.temp.c.prev2, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ avg.temp.c.prev3, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
-calculate_deviance_explained(univariate_model) ## 0.09
+calculate_deviance_explained(univariate_model) ## 0.07
 
-univariate_model<- glm((avgsinkDp) ~ temp.diff, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~ season, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.12
+
+univariate_model<- cpglm((avgsinkDp) ~ doy, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.032
+
+univariate_model<- cpglm((avgsinkDp) ~ week, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.028
+
+univariate_model<- cpglm((avgsinkDp) ~ temp.diff, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.015
 
-univariate_model<- glm((avgsinkDp) ~  snowDensity.senorge, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+univariate_model<- cpglm((avgsinkDp) ~snowDensity.senorge, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
 summary(univariate_model)
 calculate_deviance_explained(univariate_model) ## 0.027
+
+univariate_model<- cpglm((avgsinkDp) ~ hotcold, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.052
+
+univariate_model<- cpglm((avgsinkDp) ~ hotcold2, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.051
+
+univariate_model<- cpglm((avgsinkDp) ~ hotcold3, data = data,  na.action = na.omit, family = tweedie(var.power=1.1, link.power=0))
+summary(univariate_model)
+calculate_deviance_explained(univariate_model) ## 0.09
 
 ############## 6. PREP VARIABLES #####################
 
@@ -370,6 +402,7 @@ calculate_deviance_explained(univariate_model) ## 0.027
 data$cnpyClass_F <- as.factor(data$cnpyClass)
 data$cnpyClass_F <- ifelse(data$cnpyClass == 1, 'closed', 'open')
 data$season_F <- as.factor(data$season)
+data$hotcold <- ifelse(data$avg.temp.c >= 0, 'warm', 'cold')
 data$hotcold_F <- as.factor(data$hotcold)
 data$cloudy_F <- as.factor(data$cloudy)
 data$season_F <- ifelse(data$season_F == 0, "early", "late")
@@ -396,7 +429,7 @@ data_na.omit$season_F <- ifelse(data_na.omit$season_F == 0, "early", "late")
 data_na.omit$hotcold_F <- as.factor(data_na.omit$hotcold)
 
 
-write.csv(data_na.omit,'/Users/catherinebreen/Dropbox/Chapter3/data/data_simp.csv')
+#write.csv(data_na.omit,'/Users/catherinebreen/Dropbox/Chapter3/data/data_simp.csv')
 
 plot(data$avg.temp.c, data$avgsinkDp)
 plot(data$avg.temp.c.prev, data$avgsinkDp)
@@ -407,6 +440,78 @@ plot(data$doy, data$avgsinkDp)
 plot(data$week, data$avgsinkDp)
 
 ############## 7. TEMPERATURE MODELS ###############################
+
+model.avg.temp.prev_simp <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c.prev2)*cnpyClass_F +
+                              (cos(sun.time))*scale(avg.temp.c.prev2)*cnpyClass_F, # +
+                              #scale(snowDensity.senorge),
+                            data = data,  na.action = na.omit,
+                            family = Tweedie(p=1.1, link = power(0)))
+summary(model.avg.temp.prev_simp)
+saveRDS(model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model.avg.temp.prev_simp.rds')
+calculate_deviance_explained(model.avg.temp.prev_simp)
+AICc(model.avg.temp.prev_simp)
+plot(model.avg.temp.prev_simp$residuals)
+model.avg.temp.prev_simp <- update(model.avg.temp.prev_simp, na.action = na.fail)
+dredge_results <- dredge(model.avg.temp.prev_simp)
+top_model.avg.temp.prev <- get.models(dredge_results, 1)[[1]]
+summary(top_model.avg.temp.prev)
+AICc(top_model.avg.temp.prev, model.avg.temp.prev_simp)
+saveRDS(top_model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_model.avg.temp.prev.rds')
+
+model.avg.temp.prev <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c.prev2)*cnpyClass_F +
+                       (cos(sun.time))*scale(avg.temp.c.prev2)*cnpyClass_F +
+                       scale(snowDensity.senorge),
+                     data = data,  na.action = na.omit,
+                     family = Tweedie(p=1.1, link = power(0)))
+summary(model.avg.temp.prev)
+saveRDS(model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model.avg.temp.prev.rds')
+calculate_deviance_explained(model.avg.temp.prev)
+AICc(model.avg.temp.prev)
+plot(model.avg.temp.prev$residuals)
+model.avg.temp.prev <- update(model.avg.temp.prev, na.action = na.fail)
+dredge_results <- dredge(model.avg.temp.prev)
+top_models <- subset(dredge_results, delta < 4)
+top_model.avg.temp.prev <- get.models(dredge_results, 1)[[1]]
+summary(top_model.avg.temp.prev)
+AICc(top_model.avg.temp.prev, model.avg.temp.prev)
+saveRDS(top_model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_model.avg.temp.prev.rds')
+
+model.hotcold2 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold2*cnpyClass_F +
+                              (cos(sun.time))*hotcold2*cnpyClass_F +
+                              scale(snowDensity.senorge),
+                            data = data,  na.action = na.omit,
+                            family = Tweedie(p=1.1, link = power(0)))
+summary(model.hotcold2)
+saveRDS(model.hotcold2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model.hotcold2.rds')
+calculate_deviance_explained(model.hotcold2)
+AICc(model.hotcold2)
+plot(model.hotcold2$residuals)
+model.hotcold2 <- update(model.hotcold2, na.action = na.fail)
+dredge_results <- dredge(model.hotcold2)
+top_model.hotcold2 <- get.models(dredge_results, 1)[[1]]
+summary(top_model.hotcold2)
+AICc(top_model.avg.temp.prev, top_model.hotcold2)
+saveRDS(top_model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_model.avg.temp.prev.rds')
+
+model.hotcold2_simp <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold2*cnpyClass_F +
+                         (cos(sun.time))*hotcold2*cnpyClass_F, # +
+                        # scale(snowDensity.senorge),
+                       data = data,  na.action = na.omit,
+                       family = Tweedie(p=1.1, link = power(0)))
+summary(model.hotcold2_simp)
+saveRDS(model.hotcold2_simp, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model.hotcold2_simp.rds')
+calculate_deviance_explained(model.hotcold2_simp)
+AICc(model.hotcold2_simp)
+plot(model.hotcold2_simp$residuals)
+model.hotcold2_simp <- update(model.hotcold2_simp, na.action = na.fail)
+dredge_results <- dredge(model.hotcold2_simp)
+top_model.hotcold2 <- get.models(dredge_results, 1)[[1]]
+summary(top_model.hotcold2)
+AICc(top_model.avg.temp.prev, top_model.hotcold2)
+saveRDS(top_model.avg.temp.prev, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_model.avg.temp.prev.rds')
+
+
+############## 7. TEMPERATURE MODELS OLD ###############################
 
 model1 <-  gam((avgsinkDp) ~ (sin(sun.time))*season_F*cnpyClass_F +
                        (cos(sun.time))*season_F*cnpyClass_F +
@@ -442,6 +547,14 @@ summary(top_modelhotcold)
 AICc(top_modelhotcold, model1)
 saveRDS(top_modelhotcold, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold.rds')
 
+
+############# BEST MODEL ################
+
+null_model <-  gam((avgsinkDp) ~ 1,
+                      data = data,  na.action = na.omit,
+                      family = Tweedie(p=1.1, link = power(0)))
+AICc(null_model)
+data$hotcold_F <- as.factor(data$hotcold_F)
 modelhotcold2 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
                        (cos(sun.time))*hotcold_F*cnpyClass_F +
                        scale(snowDensity.senorge),
@@ -450,14 +563,17 @@ modelhotcold2 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
 summary(modelhotcold2)
 saveRDS(modelhotcold2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2.rds')
 calculate_deviance_explained(modelhotcold2)
-AICc(modelhotcold2)
+AICc(modelhotcold2, null_model)
 plot(modelhotcold2$residuals, modelhotcold2$fitted.values)
 modelhotcold2 <- update(modelhotcold2, na.action = na.fail)
 dredge_results <- dredge(modelhotcold2)
+top_models <- subset(dredge_results, delta < 4)
 top_modelhotcold2 <- get.models(dredge_results, 1)[[1]]
 summary(top_modelhotcold2)
 AICc(top_modelhotcold2, model1)
 saveRDS(top_modelhotcold2, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2.rds')
+
+####################################################
 
 
 modelhotcold3 <-  gam((avgsinkDp) ~ (sin(sun.time))*hotcold_F*cnpyClass_F +
@@ -476,6 +592,24 @@ summary(top_modelhotcold3)
 AICc(top_modelhotcold3, model1)
 saveRDS(top_modelhotcold3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold3.rds')
 
+########### 7a. TEMPERATURE CONT ##############
+
+modelhotcold2cont <-  gam((avgsinkDp) ~ (sin(sun.time))*scale(avg.temp.c)*cnpyClass_F +
+                        (cos(sun.time))*scale(avg.temp.c)*cnpyClass_F +
+                        scale(snowDensity.senorge),
+                      data = data,  na.action = na.omit,
+                      family = Tweedie(p=1.1, link = power(0)))
+summary(modelhotcold2cont)
+saveRDS(modelhotcold2cont, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2cont.rds')
+calculate_deviance_explained(modelhotcold2cont)
+AICc(modelhotcold2cont)
+plot(modelhotcold2cont$residuals, modelhotcold2cont$fitted.values)
+modelhotcold2cont <- update(modelhotcold2cont, na.action = na.fail)
+dredge_results <- dredge(modelhotcold2cont)
+top_modelhotcold2cont <- get.models(dredge_results, 1)[[1]]
+summary(top_modelhotcold2cont)
+AICc(top_modelhotcold2cont, model1)
+saveRDS(top_modelhotcold2cont, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2cont.rds')
 
 ############### 8. HURDLE MODEL #########
 # [(data$X != 41) | (data$X != 94) | (data$X != 109) ,]
@@ -537,6 +671,40 @@ summary(top_hurdlehotcold3)
 calculate_mcfadden(top_hurdlehotcold3)
 AICc(top_hurdlehotcold3, model1)
 saveRDS(top_hurdlehotcold3, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_hurdlehotcold3.rds')
+
+############## 8A. Ben Suggestion ###########
+# install.packages('momentuHMM')
+#install.packages("cosinor")
+library(cosinor)
+library(momentuHMM)
+
+time <- cosinor(data$sun.time, period = 2*pi)
+
+test <- cosinor.lm(avgsinkDp ~ time(sun.time)*amp.acro(hotcold_F) + amp.acro(snowDensity.senorge), data = data,
+                   period = 24,
+                   na.action = na.omit)
+data$fit <- predict(test) # Model predictions
+ggplot(data, aes(x = sun.time, y = avgsinkDp)) +
+  geom_point(alpha = 0.5, color = "grey") +   # Original data points
+  geom_line(aes(y = fit), color = "#0072B2", linewidth = 1) + # Fitted curve
+  labs(x = "Sun Time", y = "Predictions",
+       title = "Cosinor Model Fit") +
+  theme_minimal()
+
+
+modelhotcold_cosinor <-  gam((avgsinkDp) ~ time*hotcold_F*cnpyClass_F +
+                        scale(snowDensity.senorge),
+                      data = data,  na.action = na.omit,
+                      family = Tweedie(p=1.1, link = power(0)))
+
+summary(modelhotcold_cosinor)
+
+
+############## 8B. FINAL MODEL ###############
+
+#
+# model <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2.rds')
+# top_model <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2.rds')
 
 ############### 9. OVERFITTING CHECK ########### ######
 
@@ -645,6 +813,9 @@ top_modelhotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/t
 modelhotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold3.rds')
 top_modelhotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold3.rds')
 
+modelhotcold2cont <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2cont.rds')
+top_modelhotcold2cont <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold2cont.rds')
+
 ## hurdles
 hurdlehotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/hurdlehotcold.rds')
 #top_hurdlehotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_hurdlehotcold.rds')
@@ -672,10 +843,12 @@ AICc(model1,
      top_hurdlehotcold3
      )
 
-model <- top_modelhotcold3
+model <- modelhotcold2cont #top_modelhotcold3
 
 
 ################## PLOT ####################
+
+model <- model.hotcold2#top_modelhotcold2#model.hotcold2
 
 # Create a sequence of sun.time values for prediction
 sun_time_seq <- seq(0, 2*pi, length.out = 1000)
@@ -689,9 +862,10 @@ pred_data <- expand.grid(
   sun.time = sun_time_seq,
   #season_F = c('early', 'late'),
   cnpyClass_F = c('open', 'closed'),
-  avg.temp.c = c(-4, 2), #air.temp.seq, #c(-4, 2), #air.temp.seq ## mean > 0 is 2.2 and < 0 is -3.19
+  avg.temp.c = c(-7, 4), #air.temp.seq, #c(-4, 2), #air.temp.seq ## mean > 0 is 2.2 and < 0 is -3.19
+  hotcold2 = c('minus','plus'),
   week = c(7, 12), #week.seq,
-  hotcold_F = c('minus','plus'),
+  hotcold_F = c('cold','warm'),
   snowDensity.senorge = 300
   # temp.diff = temp.diff.seq,
   # doy = c(45, 105),
@@ -700,6 +874,7 @@ pred_data <- expand.grid(
 
 data$cnpyClass_F <- ifelse(data$cnpyClass == 1, "closed", "open")
 data$season_F <- ifelse(data$season == 0, "early", "late")
+data$hotcold_F <- as.factor(data$hotcold_F)
 
 # Define custom tick positions and labels
 tick_positions <- c(0, pi/2, pi, 3*pi/2, 2*pi)
@@ -707,15 +882,17 @@ tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
 
 
 ############## REGULAR MODEL PLOT ###############
+
+
 pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)$fit
 #pred_data$predicted_hardness <- predict(best_model4, newdata = pred_data, type = "response", se.fit = TRUE)$fit
 pred_data$se <- predict(model, newdata = pred_data[1,], type = "response", se.fit = TRUE)$se.fit
 
-colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'cold'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
   geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   geom_line(size = 2) +
   geom_point(
-    data = data[data['hotcold_F'] == 'minus',], #$season_F == 'early',],
+    data = data[data['hotcold_F'] == 'cold',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
     alpha = 0.5, position='jitter') +
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
@@ -735,11 +912,11 @@ colddays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'minus'), ], ae
 
 colddays_plot
 
-warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
+warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'warm'), ], aes(x = sun.time, y = predicted_hardness, color = factor(cnpyClass_F))) +
   geom_errorbar(aes(ymin = predicted_hardness - se, ymax = predicted_hardness + se), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
   geom_line(size = 2) +
   geom_point(
-    data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
+    data = data[data$hotcold_F == 'warm',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
     alpha = 0.5, position='jitter') +
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
@@ -757,12 +934,49 @@ warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes
                           plot.title = element_text(size = 20),         # Increase plot title text size
                           plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
   ) + geom_line(size = 1) +
-  ylim(-1,8)
+  ylim(-0.5,8)
 
 warmdays_plot
 
 grid.arrange(colddays_plot, warmdays_plot, ncol=2)
 
+############### statistics ###########
+# details
+a <- min(pred_data[(pred_data$hotcold_F == 'warm') & (pred_data$cnpyClass_F == 'open'), ]$predicted_hardness)
+b <- max(pred_data[(pred_data$hotcold_F == 'warm') & (pred_data$cnpyClass_F == 'open'), ]$predicted_hardness)
+c <- min(pred_data[(pred_data$hotcold_F == 'cold') & (pred_data$cnpyClass_F == 'open'), ]$predicted_hardness)
+d <- max(pred_data[(pred_data$hotcold_F == 'cold') & (pred_data$cnpyClass_F == 'open'), ]$predicted_hardness)
+b-a
+d-c
+
+e <- min(pred_data[(pred_data$hotcold_F == 'cold'), ]$predicted_hardness)
+f <- min(pred_data[(pred_data$hotcold_F == 'warm'), ]$predicted_hardness)
+
+# lag
+c <- function(crust, data) {
+  suntime_lag <- data[data$predicted_hardness == crust, ]$sun.time
+  radians = (suntime_lag - (3*pi/2))
+  hours = radians * 24/ (2*pi)
+  return(hours)
+}
+
+findLag_sunrise <- function(crust, data) {
+  suntime_lag <- data[data$predicted_hardness == crust, ]$sun.time
+  radians = suntime_lag - (pi/2)
+  hours = radians * 24/ (2*pi)
+  return(hours)
+}
+
+# open canopy : crust
+findLag_sunset(a, pred_data) ## warm
+findLag_sunset(c, pred_data) ## cold
+# open canopy slush
+findLag_sunrise(b, pred_data) ## warm
+findLag_sunrise(d, pred_data) ## cold
+
+# open and closed canopy: crust
+findLag_sunset(e, pred_data) ## warm
+findLag_sunset(f, pred_data) ## cold
 
 
 ############## HURLDE MODEL PLOT ###############
@@ -797,6 +1011,111 @@ warmdays_plot <- ggplot(data = pred_data[(pred_data$hotcold_F == 'plus'), ], aes
   geom_line(size = 2) +
   geom_point(
     data = data[data$hotcold_F == 'plus',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          # axis.text.y = element_text(size =16, color = 'black'),
+                          axis.text.y = element_blank(),
+                          # axis.title.y = element_text(size = 16, color = 'black'),
+                          axis.title.y = element_blank(),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-1,8)
+
+warmdays_plot
+
+grid.arrange(colddays_plot, warmdays_plot, ncol=2)
+
+
+
+
+############## CONTINUOUS TEMP MODEL PLOT ###############
+
+model <- model.avg.temp.prev #modelhotcold2cont #model.avg.temp.prev
+#modelhotcold2cont
+  #model.avg.temp.prev
+
+# Create a sequence of sun.time values for prediction
+sun_time_seq <- seq(0, 2*pi, length.out = 1000)
+air.temp.seq <- seq(-7, 4, length.out = 20)
+#temp.diff.seq <- seq(2, 20, length.out = 3)
+week.seq <- seq(5, 18, length.out = 5)
+#avgtemp_seq <- seq(-12, 5, by=1, length.out = 10)
+
+# Create a new data frame for predictions
+pred_data <- expand.grid(
+  sun.time = sun_time_seq,
+  #season_F = c('early', 'late'),
+  cnpyClass_F = c('open', 'closed'),
+  #avg.temp.c = air.temp.seq, #air.temp.seq, #c(-4, 2), #air.temp.seq ## mean > 0 is 2.2 and < 0 is -3.19
+  avg.temp.c.prev2 = air.temp.seq, #air.temp.seq, #c(-4, 2), #air.temp.seq ## mean > 0 is 2.2 and < 0 is -3.19
+  week = c(7, 12),
+  hotcold_F = c('minus','plus'),
+  snowDensity.senorge = 300
+)
+
+# data$cnpyClass_F <- ifelse(data$cnpyClass == 1, "closed", "open")
+# data$season_F <- ifelse(data$season == 0, "early", "late")
+
+# Define custom tick positions and labels
+tick_positions <- c(0, pi/2, pi, 3*pi/2, 2*pi)
+tick_labels <- c("midnight", "sunrise", "noon", "sunset", "midnight")
+
+pred_data$predicted_hardness <- predict(model, newdata = pred_data, type = "response", se.fit = TRUE)$fit
+#pred_data$predicted_hardness <- predict(best_model4, newdata = pred_data, type = "response", se.fit = TRUE)$fit
+pred_data$se <- predict(model, newdata = pred_data[1,], type = "response", se.fit = TRUE)$se.fit
+
+pred_data_minus <- pred_data %>%
+  #filter(avg.temp.c < 0) %>%
+  filter(avg.temp.c.prev2 < 0) %>%
+  group_by(sun.time, cnpyClass_F) %>%
+  summarise(avg_hardness = mean(predicted_hardness, na.rm = TRUE),
+            avg_se = se)
+
+pred_data_plus <- pred_data %>%
+# filter(avg.temp.c >= 0) %>%
+  filter(avg.temp.c.prev2 >= 0) %>%
+  group_by(sun.time, cnpyClass_F) %>%
+  summarise(avg_hardness = mean(predicted_hardness, na.rm = TRUE),
+            avg_se = se)
+
+colddays_plot <- ggplot(data = pred_data_minus, aes(x = sun.time, y = avg_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = avg_hardness - avg_se/2, ymax = avg_hardness + avg_se/2), width = 0.1, alpha = 0.5, color = 'lightgrey') +  # Add error bars
+  geom_line(size = 2) +
+  geom_point(
+    data = data[data['hotcold2'] == 'minus',], #$season_F == 'early',],
+    aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
+    alpha = 0.5, position='jitter') +
+  labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "A)", color = "Canopy Class") +
+  geom_vline(xintercept = 3*pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical line at 3*pi/2
+  geom_vline(xintercept = pi/2, linetype = "dashed", color = "darkgrey", linewidth=1) + # Add vertical
+  scale_color_manual(values = c("skyblue", "darkblue"), labels = c("Open Canopy", "Closed Canopy")) +
+  scale_x_continuous(breaks = tick_positions, labels = tick_labels) +
+  theme_minimal() + theme(legend.position = 'none',
+                          axis.text.x = element_text(size = 16, angle = 0, color = 'black'), # Rotate x-axis labels
+                          axis.title.x = element_text(size = 16, color = 'black'),       # Increase x-axis title text size
+                          axis.text.y = element_text(size =16, color = 'black'),
+                          axis.title.y = element_text(size = 16, color = 'black'),
+                          plot.title = element_text(size = 20),         # Increase plot title text size
+                          plot.margin = unit(c(0.2,0.5,0.2,0.5), "cm")
+  ) + geom_line(size = 1) +
+  ylim(-0.5,8)
+
+colddays_plot
+
+warmdays_plot <- ggplot(data = pred_data_plus, aes(x = sun.time, y = avg_hardness, color = factor(cnpyClass_F))) +
+  geom_errorbar(aes(ymin = avg_hardness - avg_se/2, ymax = avg_hardness + avg_se/2), width = 0.1, alpha = 0.5, color = 'lightgrey') +
+  geom_line(size = 2) +
+  geom_point(
+    data = data[data$hotcold2 == 'plus',], #$season_F == 'early',],
     aes(x = sun.time, y = avgsinkDp, color = factor(cnpyClass_F)),
     alpha = 0.5, position='jitter') +
   labs(x = "", y = "Tuna Can Sinking Depth (cm)", title = "B)", color = "Canopy Class") +
