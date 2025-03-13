@@ -169,6 +169,8 @@ swe$date <- as.Date(swe$date1)
 swe <- swe[c('location_id','swe','date')]
 
 data_wsnowswe <- dplyr::left_join(data_wsnow, swe, by = c('location_id','date'), unmatched = "drop")
+#data_wsnowswe$snowDensity.senorge <- data_wsnowswe$swe / data_wsnowswe$snowdepth.mm *100
+#hist(data_wsnowswe$snowDensity.senorge)
 head(data_wsnowswe)
 
 # avg temp
@@ -189,14 +191,8 @@ head(data_wsnowswetemp)
 
 ######### now do the tree canopy cover ### ** could update this
 ############## 2B. TREE CANOPY COVER #############
-# head(treecanopy)
-# treecanopy$treecover <- treecanopy$SAMPLE_treecanopycover1
-# treecanopy$location_id <- treecanopy$LokalitetID
-# head(treecanopy)
-# treecanopy <- treecanopy[, c("location_id", "treecover")] ## this is 2018!!!
-# head(treecanopy)
 
-#data_wsnowtree <- dplyr::left_join(data_wsnow, treecanopy, by = c('location_id'), unmatched = "drop")
+
 ## updated tree info:
 treec <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/treecovariates.rds')
 
@@ -211,20 +207,20 @@ data_main <- data_wsnowtree[!is.na(data_wsnowtree$validated_species),]
 
 ############ 2C. HUMAN POPULATION DENSITY FOR NORWAY ################
 # units are number of persons per sq km #
-humanDensity <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/humanDensityNorway_GEE.csv')
-humanDensity$humandens <- humanDensity$SAMPLE_humanPop1
-humanDensity$location_id <- humanDensity$LokalitetID
-humanDensity <- humanDensity[, c("location_id", "humandens")] ## this is 2018!!!
-head(humanDensity)
-mean(na.omit(humanDensity$humandens))
-
-data_main <- dplyr::left_join(data_main, humanDensity, by = c('location_id'), unmatched = "drop")
-
-data_main$snowDensity.senorge <- data_main$swe / data_main$snowdepth.mm *100
-hist(data_main$snowDensity.senorge)
-
-saveRDS(data_main, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_Feb25.rds")
-head(data_main)
+# humanDensity <- read.csv('/Users/catherinebreen/Dropbox/Chapter3/data/humanDensityNorway_GEE.csv')
+# humanDensity$humandens <- humanDensity$SAMPLE_humanPop1
+# humanDensity$location_id <- humanDensity$LokalitetID
+# humanDensity <- humanDensity[, c("location_id", "humandens")] ## this is 2018!!!
+# head(humanDensity)
+# mean(na.omit(humanDensity$humandens))
+#
+# data_main <- dplyr::left_join(data_main, humanDensity, by = c('location_id'), unmatched = "drop")
+#
+# data_main$snowDensity.senorge <- data_main$swe / data_main$snowdepth.mm *100
+# hist(data_main$snowDensity.senorge)
+#
+# saveRDS(data_main, file = "/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_Feb25.rds")
+# head(data_main)
 
 
 ################# 3.INTERMEDIATE SAVE (could start here) ###########
@@ -234,29 +230,29 @@ data_main <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main
 ### not sure why i have so many NANs, but lets ignore for now
 
 ################### 3A. PREDATOR DENSITY ###############
-pred_day <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_day_all.rds')
-pred_month <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_month_all.rds')
-pred_seas <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_seas_all.rds')
-pred_year <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_year_all.rds')
-
-## conduct a bunch of left merges to get
-colnames(pred_day) <- c('location_id','date', 'pred_day')
-colnames(pred_month) <- c('location_id','month', 'year', 'pred_month')
-colnames(pred_seas) <- c('location_id','year', 'pred_seas')
-colnames(pred_year) <- c('location_id','year', 'pred_year')
-
-head(data_main)
-
-data_main <- left_join(data_main, pred_day, by = c('location_id','date'))
-
-data_main$month <- as.numeric(data_main$month)
-data_main$year <- as.numeric(data_main$year)
-data_main <- left_join(data_main, pred_month, by = c('location_id','month', 'year'))
-
-data_main <- left_join(data_main, pred_seas, by = c('location_id', 'year'))
-data_main <- left_join(data_main, pred_year, by = c('location_id', 'year'))
-
-head(data_main)
+# pred_day <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_day_all.rds')
+# pred_month <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_month_all.rds')
+# pred_seas <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_seas_all.rds')
+# pred_year <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/pred_dens_year_all.rds')
+#
+# ## conduct a bunch of left merges to get
+# colnames(pred_day) <- c('location_id','date', 'pred_day')
+# colnames(pred_month) <- c('location_id','month', 'year', 'pred_month')
+# colnames(pred_seas) <- c('location_id','year', 'pred_seas')
+# colnames(pred_year) <- c('location_id','year', 'pred_year')
+#
+# head(data_main)
+#
+# data_main <- left_join(data_main, pred_day, by = c('location_id','date'))
+#
+# data_main$month <- as.numeric(data_main$month)
+# data_main$year <- as.numeric(data_main$year)
+# data_main <- left_join(data_main, pred_month, by = c('location_id','month', 'year'))
+#
+# data_main <- left_join(data_main, pred_seas, by = c('location_id', 'year'))
+# data_main <- left_join(data_main, pred_year, by = c('location_id', 'year'))
+#
+# head(data_main)
 
 
 ##################  3B. CALCULATE SUNTIME  #############
@@ -277,30 +273,36 @@ data_main <- data_main[complete.cases(data_main$Latitude),]
 print(length(unique(data_main$date)))
 coords <- data_main[,c("LongitudeNum", "LatitudeNum")]
 #Coords_SPDF <- SpatialPointsDataFrame(coords, proj4string = CRS("+init=epsg:4269 +proj=longlat +datum=NAD83+zone=33"), data = data_wsnow)
-Coords_SPDF <- SpatialPointsDataFrame(coords, proj4string = CRS("+init=epsg:4269 +proj=longlat +datum=NAD83"), data = data_main)
+Coords_SPDF <- SpatialPointsDataFrame(coords, proj4string = CRS("+proj=longlat +datum=NAD83"), data = data_main)
+
+#CRS("+init=epsg:4269 +proj=longlat +datum=NAD83")
 
 # Convert times to suntime
-data_main$timeZone <- lutz::tz_lookup_coords(lat=data_main$LatitudeNum, lon = data_main$LongitudeNum, warn = FALSE, method = "accurate")
-Dates<- as.POSIXct(data_main$datetime, tz = 'Europe/Oslo') #"data_main$timeZone")
+#data_main$timeZone <- lutz::tz_lookup_coords(lat=data_main$LatitudeNum, lon = data_main$LongitudeNum, warn = FALSE, method = "accurate")
+Dates<- as.POSIXct(data_main$datetime, tz = 'Europe/Oslo') #tz = 'Europe/Oslo') #
 data_main$sun.time <- overlap::sunTime(data_main$rads, Dates, Coords_SPDF)
 
 data_main <- data_main[complete.cases(data_main$sun.time),]
-data_main_test <- data_main %>% drop_na()#data_main[!is.na(data_main$sun.time),]
+data_main_test <- data_main %>% drop_na() #data_main[!is.na(data_main$sun.time),]
 head(data_main_test)
 ## sample sunTime comparison, example 121
 ### ALL SPECIES
-par(mfrow=2:1)
 densityPlot(data_main_test$sun.time, col='red', lwd=2,  main="Sun time")
+
 axis(1, at=c(0, 6, 12, 18, 24),
      labels=c("midnight", "sunrise", "noon", "sunset", "midnight"))
 densityPlot(data_main_test$rads, lwd=2, main="Clock time")
 
-saveRDS(data_main_test, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_all_cov_Feb25.rds')
+saveRDS(data_main_test, '/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_all_cov_mar13.rds')
 
 
 ######### 4. [start] PREDICT SNOW HARDNESS #########
 
-data_main_test <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_all_cov_Feb25.rds')
+data_main_test <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/data_main_all_cov_mar12.rds')
+
+data_main_test$month <- as.numeric(data_main_test$month)
+data_main_test$year <- as.numeric(data_main_test$year)
+
 
 # make sure column names match
 data_test <- data_main_test %>% filter(month %in% c(2,3,4,5))  %>%
@@ -309,13 +311,21 @@ data_test <- data_main_test %>% filter(month %in% c(2,3,4,5))  %>%
   mutate(cnpyClass = ifelse(treecover < 50, 0, 1)) %>%
   mutate(cnpyClass_F = as.factor(ifelse(treecover < 50, 'open', 'closed'))) %>%
   mutate(avg.temp.c = avg.temp) %>%
-  mutate(hotcold_F = as.factor(ifelse(avg.temp >= 0, 'plus', 'minus')))
+  mutate(hotcold_F = as.factor(ifelse(avg.temp.c >= 0, 'warm', 'cold')))
+
+data_test <- data_test %>%
+  arrange(location_id, date) %>%  # Ensure data is sorted
+  group_by(location_id) %>%  # Group by location
+  mutate(avg.temp.c = avg.temp,
+          avg.temp.c.prev = lag(avg.temp),
+         avg.temp.c.prev2 = slide_mean(avg.temp.c, before = 2, after = -1, complete = TRUE)) %>%
+  ungroup()
 
 
 
 ########### MODEL SNOW HARDNESS #########
 
-## alternative
+# alternative #
 modelhotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold.rds')
 top_modelhotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold.rds')
 modelhotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold2.rds')
@@ -323,12 +333,16 @@ top_modelhotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/t
 modelhotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/modelhotcold3.rds')
 top_modelhotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_modelhotcold3.rds')
 
+# hurdles #
 hurdlehotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/hurdlehotcold.rds')
 #top_hurdlehotcold <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_hurdlehotcold.rds')
 hurdlehotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/hurdlehotcold2.rds')
 top_hurdlehotcold2 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_hurdlehotcold2.rds')
 hurdlehotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/hurdlehotcold3.rds')
 top_hurdlehotcold3 <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/top_hurdlehotcold3.rds')
+
+# prev2
+modelprev <- readRDS('/Users/catherinebreen/Dropbox/Chapter3/r_outputs/model.avg.temp.prev.rds')
 
 
 ############# correct for heteroskedascity ###########
@@ -349,6 +363,9 @@ data_test$modelhotcold2 <- predict(modelhotcold2, newdata = data_test, type = 'r
 data_test$top_modelhotcold2 <- predict(top_modelhotcold2, newdata = data_test, type = 'response', se.fit = TRUE)$fit #stats::
 data_test$modelhotcold3 <- predict(modelhotcold3, newdata = data_test, type = 'response', se.fit = TRUE)$fit #stats::
 
+data_test$modelprev <- predict(modelprev, newdata = data_test, type = 'response', se.fit = TRUE)$fit
+
+
 ggplot(data_test, aes(x = top_modelhotcold2)) +
   geom_histogram(binwidth = 0.5, fill = "skyblue", color = "black", alpha = 0.7) +
   labs(title = "Histogram of Predictions",
@@ -361,6 +378,9 @@ ggplot(data_test, aes(x = top_modelhotcold2)) +
     axis.title.y = element_text(size = 12, face = "bold"),
     axis.text = element_text(size = 10)
   )
+
+max(data_test$modelprev, na.rm = TRUE)
+
 
 ###### HURDLE MODEL VISUALIZE PREDICTIONS ####
 data_test$hurdlehotcold <- predict(hurdlehotcold, newdata = data_test, type = 'response', se.fit = TRUE)
@@ -396,12 +416,16 @@ ggplot(data_test, aes(x = top_modelhotcold2, y = roedeer_binary)) +
 
 
 # Create the jitter plot
-ggplot(data_test, aes(x = predictions, y = hare_binary)) +
+ggplot(data_test, aes(x = top_modelhotcold2, y = hare_binary)) +
   geom_jitter(width = 0.1, height = 0.1) +
   labs(x = "Snow Hardness Predictions", y = "Hare Binary", title = "Jitter Plot of Predictions vs. Hare Binary") +
   theme_minimal()
 
+saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar13.RDS')
+
 saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar3.RDS')
+saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar12.RDS')
+saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred_mar12b.RDS')
 #saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpred.RDS')
 # saveRDS(data_test2, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpredUPD.RDS')
 # saveRDS(data_test, '/Users/catherinebreen/Dropbox/Chapter3/scandcam_obs_forGAM_wpredUPD2.RDS')
