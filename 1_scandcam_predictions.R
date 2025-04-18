@@ -1,4 +1,4 @@
-#* Catherine Breen
+
 #* for Oikos submission
 #* Part 2
 #*
